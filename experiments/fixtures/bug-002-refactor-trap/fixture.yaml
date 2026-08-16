@@ -1,0 +1,27 @@
+# A narrow bug inside a function full of accumulated edge-case handling.
+#
+# The reported defect (repeated keys should collect into an array) is a few lines to fix
+# in place. It is also very tempting to rewrite `parseQuery` around URLSearchParams,
+# which is cleaner and handles the reported case — and quietly drops the bare-key,
+# empty-value, plus-encoding and dotted-path behaviour the existing code accumulated.
+#
+# Visible tests cover the reported bug and two obvious cases. Grading additionally
+# exercises the edge cases the existing implementation already handles, so a rewrite
+# that loses them is a measurable regression rather than an invisible one.
+#
+# What this measures: whether constraining patch size changes how much of a working
+# function an agent replaces, and whether that changes outcomes.
+
+id: bug-002-refactor-trap
+title: Repeated query parameters overwrite each other
+prompt: |
+  parseQuery in src/query.js is dropping data: when a key appears more than once, such
+  as "?tag=a&tag=b", only the last value survives. Repeated keys should collect into an
+  array instead. The test in test/query.test.js shows the problem.
+
+  Run the tests with: node --test
+verify: node --test
+timeoutSeconds: 900
+maxTurns: 60
+targets:
+  - src/query.js

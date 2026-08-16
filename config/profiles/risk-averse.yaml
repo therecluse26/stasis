@@ -1,0 +1,29 @@
+# Profile: risk-averse
+#
+# Parameter set, not a personality. Rests at higher stress and lower confidence, and
+# converts a given stress level into tighter patch limits and more verification.
+# Expected signature: smaller diffs, more reads per change, more test runs, and
+# plausibly more steps to completion on tasks that do not need the caution.
+
+profile: risk-averse
+
+variables:
+  stress:
+    baseline: 0.35
+    decayRate: 0.04
+  confidence:
+    baseline: 0.40
+  noveltyDrive:
+    baseline: 0.30
+
+policy:
+  fields:
+    maxPatchLines:
+      intercept: 0.40
+      terms: { stress: -0.65, confidence: +0.25, fatigue: -0.10 }
+    verificationLevel:
+      intercept: 0.45
+      terms: { stress: +0.55, confidence: -0.20, fatigue: -0.05 }
+    changeRiskTolerance:
+      intercept: 0.15
+      terms: { confidence: +0.45, stress: -0.60, persistence: +0.10 }

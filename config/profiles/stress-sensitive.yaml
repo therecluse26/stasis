@@ -1,0 +1,40 @@
+# Profile: stress-sensitive
+#
+# Parameter set, not a personality. Stress moves further per event and returns to
+# baseline slowly, so a single failure has a long behavioral tail.
+# Expected signature: sharp tightening after the first failure that persists for many
+# turns; useful for asking whether the *dynamics* matter or only the average level.
+
+profile: stress-sensitive
+
+variables:
+  stress:
+    baseline: 0.20
+    decayRate: 0.02
+    maxDeltaPerEvent: 0.30
+
+events:
+  TEST_FAILURE:
+    stress: +0.22
+    confidence: -0.08
+    fatigue: +0.03
+  BUILD_FAILURE:
+    stress: +0.18
+    confidence: -0.07
+    fatigue: +0.03
+  TYPECHECK_FAILURE:
+    stress: +0.15
+    confidence: -0.06
+    fatigue: +0.02
+  REPEATED_FAILURE:
+    stress: +0.26
+    confidence: -0.10
+    persistence: -0.15
+    noveltyDrive: +0.12
+    fatigue: +0.04
+
+modulators:
+  uncertainty:
+    stress: +0.10
+    confidence: -0.04
+    noveltyDrive: +0.02

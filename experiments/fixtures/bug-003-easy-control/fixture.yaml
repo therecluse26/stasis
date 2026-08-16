@@ -1,0 +1,22 @@
+# A task neuromodulation should not help with.
+#
+# One obvious off-by-one, in a four-line function, with a test that names it. There is no
+# wrong hypothesis to revise and nothing to over-refactor, so any measured difference
+# between conditions here is overhead rather than benefit: extra verification, blocked
+# edits, longer paths to the same answer.
+#
+# This fixture exists so the instrument can show that neuromodulation *costs* something.
+# A study reporting only the two fixtures where it might help would not be an experiment.
+
+id: bug-003-easy-control
+title: clamp excludes its upper bound
+prompt: |
+  clamp() in src/clamp.js returns the wrong value when the input equals the maximum —
+  it returns max - 1 instead of max. The test in test/clamp.test.js shows it.
+
+  Run the tests with: node --test
+verify: node --test
+timeoutSeconds: 600
+maxTurns: 30
+targets:
+  - src/clamp.js

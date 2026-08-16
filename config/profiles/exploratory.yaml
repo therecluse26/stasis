@@ -1,0 +1,37 @@
+# Profile: exploratory
+#
+# Parameter set, not a personality. Rests at high novelty drive and responds to failure
+# by opening the search rather than narrowing it.
+# Expected signature: more strategy changes, more alternative hypotheses, wider file
+# exploration, and a risk of thrashing on tasks with one obvious fix.
+
+profile: exploratory
+
+variables:
+  noveltyDrive:
+    baseline: 0.65
+    decayRate: 0.02
+  persistence:
+    baseline: 0.65
+
+events:
+  TEST_FAILURE:
+    stress: +0.10
+    confidence: -0.08
+    noveltyDrive: +0.06
+    fatigue: +0.03
+  REPEATED_FAILURE:
+    stress: +0.12
+    confidence: -0.10
+    persistence: -0.20
+    noveltyDrive: +0.18
+    fatigue: +0.04
+
+policy:
+  fields:
+    explorationLevel:
+      intercept: 0.25
+      terms: { noveltyDrive: +0.70, persistence: -0.25, fatigue: -0.15 }
+    strategyBranchCount:
+      intercept: 0.30
+      terms: { noveltyDrive: +0.60, fatigue: -0.40, persistence: -0.20 }

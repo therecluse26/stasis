@@ -1,0 +1,9 @@
+# Profile: balanced
+#
+# Profiles are parameter sets, not personalities. Each is an overlay merged onto
+# config/default.yaml, so it states only what it changes.
+#
+# This one changes nothing: it is the reference physiology every other profile is
+# compared against.
+
+profile: balanced

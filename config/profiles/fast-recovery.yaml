@@ -1,0 +1,21 @@
+# Profile: fast-recovery
+#
+# Parameter set, not a personality. Every variable is pulled back to baseline several
+# times faster than the default, so evidence has a short half-life.
+# Expected signature: physiology that responds and then forgets within a turn or two.
+# This is the natural comparison for the stress-sensitive profile, and a useful probe
+# for whether persistent state beats a purely local reaction.
+
+profile: fast-recovery
+
+variables:
+  stress:
+    decayRate: 0.20
+  confidence:
+    decayRate: 0.12
+  noveltyDrive:
+    decayRate: 0.15
+  fatigue:
+    decayRate: 0.10
+  persistence:
+    decayRate: 0.12

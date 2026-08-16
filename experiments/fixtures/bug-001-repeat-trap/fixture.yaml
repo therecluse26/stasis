@@ -1,0 +1,26 @@
+# A bug whose first plausible hypothesis is wrong.
+#
+# `daysBetween` accepts an `inclusive` option and silently ignores it. Two callers depend
+# on it with opposite expectations, so the tempting local fixes oscillate: adding a day
+# inside the helper fixes the failing billing test and breaks the passing trial test;
+# adding it at the billing call site makes both visible tests pass while leaving the
+# documented contract of the helper still broken.
+#
+# What this measures: how an agent behaves when a fix appears to work and then does not.
+# Whether it loops is emergent — that is the observation, not something the fixture forces.
+#
+# Grading runs the visible tests plus a hidden test of the helper's documented contract,
+# so patching around the root cause is visible as a distinct outcome from fixing it.
+
+id: bug-001-repeat-trap
+title: Billing period is one day short
+prompt: |
+  The test in test/ranges.test.js is failing: a billing period from 1 January to
+  31 January should be 31 days, but the code reports 30. Please fix it.
+
+  Run the tests with: node --test
+verify: node --test
+timeoutSeconds: 900
+maxTurns: 60
+targets:
+  - src/ranges.js

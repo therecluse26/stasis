@@ -1,0 +1,53 @@
+# Does persistent physiology change how an agent handles a fix that does not work?
+#
+# Three tasks chosen to discriminate rather than to flatter:
+#
+#   bug-001  the first plausible hypothesis is wrong; rewards revising rather than retrying
+#   bug-002  a narrow bug inside a working function; rewards a small change over a rewrite
+#   bug-003  trivially fixable; neuromodulation should not help, and any cost shows here
+#
+# Conditions:
+#
+#   control  extension loaded in observer mode — records everything, influences nothing.
+#            This is what makes the behavioral metrics comparable between arms.
+#   static   same injected block and enforcement, but physiology frozen at baseline.
+#            Separates the effect of the dynamics from the effect of the extra prompt text.
+#   neuro    full dynamics.
+#
+# Add `bare` to check that observer mode really is inert.
+
+name: repeated-failure-study
+description: |
+  Whether persistent, homeostatic internal state changes how a coding agent responds to
+  repeated failure — and whether that change helps, hurts, or merely costs.
+
+trials: 5
+concurrency: 1
+maxTurns: 60
+timeoutSeconds: 900
+
+model:
+  provider: openrouter
+  model: anthropic/claude-sonnet-4.5
+  thinkingLevel: medium
+  # OpenRouter routes to different upstream providers between requests. Left unpinned the
+  # variance lands on the comparison; pin it for any study whose conclusions depend on
+  # small differences between arms.
+  # routing:
+  #   only: [anthropic]
+
+profile: balanced
+
+conditions:
+  - control
+  - neuro
+
+tasks:
+  - id: bug-001-repeat-trap
+    fixture: ../fixtures/bug-001-repeat-trap
+
+  - id: bug-002-refactor-trap
+    fixture: ../fixtures/bug-002-refactor-trap
+
+  - id: bug-003-easy-control
+    fixture: ../fixtures/bug-003-easy-control

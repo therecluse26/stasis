@@ -1,0 +1,385 @@
+# pi-neuro default physiology.
+#
+# This file is the editable surface for experimentation. It mirrors DEFAULT_CONFIG in
+# src/neuro/config.ts, which exists so the engine is usable with zero filesystem access.
+# Overlays are merged deeply onto the defaults, so a profile only needs to state what it
+# changes. Arrays replace wholesale rather than concatenating.
+#
+# Prefer changing configuration over changing source.
+
+version: "0.1.0"
+profile: balanced
+
+# ---------------------------------------------------------------------------
+# Variables
+#
+# baseline          where the variable rests with no evidence
+# decayRate         fraction of the gap to baseline closed per transition
+# maxDeltaPerEvent  ceiling on how far a single event may move this variable
+# ---------------------------------------------------------------------------
+variables:
+  stress:
+    baseline: 0.20
+    decayRate: 0.05
+    min: 0.0
+    max: 1.0
+    maxDeltaPerEvent: 0.20
+
+  confidence:
+    baseline: 0.50
+    decayRate: 0.02
+    min: 0.0
+    max: 1.0
+    maxDeltaPerEvent: 0.20
+
+  noveltyDrive:
+    baseline: 0.40
+    decayRate: 0.03
+    min: 0.0
+    max: 1.0
+    maxDeltaPerEvent: 0.20
+
+  fatigue:
+    baseline: 0.00
+    decayRate: 0.02
+    min: 0.0
+    max: 1.0
+    maxDeltaPerEvent: 0.10
+
+  persistence:
+    baseline: 0.80
+    decayRate: 0.02
+    min: 0.0
+    max: 1.0
+    maxDeltaPerEvent: 0.20
+
+# ---------------------------------------------------------------------------
+# Event map
+#
+# These are the magnitudes at nominal severity (0.5). The engine scales them between
+# severity.minScale and severity.maxScale.
+# ---------------------------------------------------------------------------
+events:
+  TEST_FAILURE:
+    stress: +0.12
+    confidence: -0.08
+    fatigue: +0.02
+
+  TEST_SUCCESS:
+    stress: -0.08
+    confidence: +0.10
+    fatigue: +0.008
+
+  REPEATED_FAILURE:
+    stress: +0.15
+    confidence: -0.10
+    persistence: -0.15
+    noveltyDrive: +0.12
+    fatigue: +0.025
+
+  BUILD_FAILURE:
+    stress: +0.10
+    confidence: -0.07
+    fatigue: +0.02
+
+  BUILD_SUCCESS:
+    stress: -0.05
+    confidence: +0.06
+    fatigue: +0.008
+
+  TYPECHECK_FAILURE:
+    stress: +0.08
+    confidence: -0.06
+    fatigue: +0.015
+
+  TYPECHECK_SUCCESS:
+    stress: -0.04
+    confidence: +0.05
+    fatigue: +0.008
+
+  LINT_FAILURE:
+    stress: +0.04
+    confidence: -0.03
+    fatigue: +0.012
+
+  LINT_SUCCESS:
+    stress: -0.02
+    confidence: +0.02
+    fatigue: +0.006
+
+  PATCH_APPLIED:
+    confidence: +0.03
+    fatigue: +0.015
+
+  PATCH_REJECTED:
+    stress: +0.07
+    confidence: -0.05
+    fatigue: +0.015
+
+  REVERT:
+    stress: +0.05
+    confidence: -0.09
+    persistence: -0.05
+    noveltyDrive: +0.05
+
+  # Changing strategy is rewarded with renewed persistence for the new line of attack,
+  # and costs a little confidence because the previous understanding was wrong.
+  STRATEGY_CHANGE:
+    stress: -0.03
+    confidence: -0.02
+    persistence: +0.10
+    noveltyDrive: -0.05
+    fatigue: +0.02
+
+  ASSUMPTION_INVALIDATED:
+    stress: +0.10
+    confidence: -0.16
+    persistence: -0.08
+    noveltyDrive: +0.10
+
+  TOOL_ERROR:
+    stress: +0.05
+    confidence: -0.02
+    fatigue: +0.012
+
+  LARGE_CHANGE:
+    stress: +0.04
+    fatigue: +0.03
+
+  HIGH_UNCERTAINTY:
+    stress: +0.06
+    confidence: -0.05
+    noveltyDrive: +0.04
+
+  TASK_SUCCESS:
+    stress: -0.15
+    confidence: +0.15
+    persistence: +0.05
+
+  TASK_FAILURE:
+    stress: +0.15
+    confidence: -0.15
+    persistence: -0.10
+
+  # Inspection is what a cautious policy asks for. It must never itself raise stress,
+  # or verification would feed the very pressure that demanded it.
+  INSPECTION:
+    stress: -0.01
+    fatigue: +0.01
+
+  POLICY_BLOCK:
+    fatigue: +0.008
+    noveltyDrive: +0.03
+
+  # Emitted at the end of every turn. Supplies time-like decay without using a clock,
+  # which is what keeps replays exactly reproducible. Settles fatigue at 0.4 from the
+  # passage of turns alone, leaving the upper half of the range for genuinely heavy work.
+  TICK:
+    fatigue: +0.008
+
+# Severity 0.5 always yields exactly 1.0, so the numbers above are what a typical
+# event of that type actually does.
+severity:
+  enabled: true
+  minScale: 0.5
+  maxScale: 1.5
+
+# Continuous contributions layered on top of the discrete event delta, scaled by the
+# appraised uncertainty and novelty of the event.
+modulators:
+  uncertainty:
+    stress: +0.06
+    confidence: -0.04
+    noveltyDrive: +0.02
+  novelty:
+    noveltyDrive: +0.04
+    fatigue: +0.01
+
+# ---------------------------------------------------------------------------
+# Interactions
+#
+# Activation is computed from the pre-transition state only, so rules cannot observe
+# each other and order does not matter. Per-target displacements are capped so adding
+# rules cannot compound without bound.
+# ---------------------------------------------------------------------------
+interactions:
+  # A rule's strength is stated as `displacement`: how far it may shift its target's
+  # resting point, in units of that variable's range, at full activation. The engine
+  # converts it to a per-step amount as displacement * decayRate(target), so a coupling
+  # is always weighed against the restoring force it works against and can never
+  # overpower it. Stating it this way also means a profile that changes a decay rate
+  # rescales its couplings automatically, which a raw per-step gain would not.
+  maxDisplacementPerRule: 0.35
+  maxDisplacementPerTarget: 0.50
+  rules:
+    - id: fatigue-suppresses-novelty
+      source: fatigue
+      target: noveltyDrive
+      displacement: -0.25
+      threshold: 0.60
+      direction: above
+      description: Heavy workload narrows exploration rather than degrading quality
+
+    - id: fatigue-erodes-persistence
+      source: fatigue
+      target: persistence
+      displacement: -0.20
+      threshold: 0.70
+      direction: above
+      description: Sustained load makes continuing the current line less attractive
+
+    - id: low-persistence-drives-novelty
+      source: persistence
+      target: noveltyDrive
+      displacement: +0.25
+      threshold: 0.35
+      direction: below
+      description: Abandoning a strategy should open the search, not close it
+
+    - id: confidence-damps-stress
+      source: confidence
+      target: stress
+      displacement: -0.15
+      threshold: 0.75
+      direction: above
+      description: Well-supported understanding lowers threat pressure
+
+    - id: stress-damps-novelty
+      source: stress
+      target: noveltyDrive
+      displacement: -0.20
+      threshold: 0.80
+      direction: above
+      description: Acute pressure favors consolidation over speculative branching
+
+# ---------------------------------------------------------------------------
+# Policy
+#
+#   unit  = clamp01(intercept + sum(terms[v] * state[v]))
+#   value = min + unit * (max - min), rounded when the field is a count
+#
+# Coefficient signs are validated at load: they encode the spec's behavioral
+# requirements, so a flipped sign fails loudly instead of silently inverting a study.
+# ---------------------------------------------------------------------------
+policy:
+  fields:
+    maxPatchLines:
+      min: 20
+      max: 400
+      round: true
+      intercept: 0.55
+      terms: { stress: -0.55, confidence: +0.30, fatigue: -0.10 }
+
+    verificationLevel:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.30
+      terms: { stress: +0.50, confidence: -0.25, fatigue: -0.05 }
+
+    explorationLevel:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.10
+      terms: { noveltyDrive: +0.70, persistence: -0.25, fatigue: -0.20 }
+
+    inspectionDepth:
+      min: 2
+      max: 8
+      round: true
+      intercept: 0.25
+      terms: { stress: +0.50, confidence: -0.20, fatigue: -0.10 }
+
+    retryTolerance:
+      min: 0
+      max: 4
+      round: true
+      intercept: 0.05
+      terms: { persistence: +0.85, stress: -0.15 }
+
+    # Intercept places the baseline state at two open strategies. Lower values leave the
+    # field pinned near its floor, so ordinary work would strip the agent of alternatives
+    # before fatigue had said anything meaningful.
+    strategyBranchCount:
+      min: 1
+      max: 4
+      round: true
+      intercept: 0.25
+      terms: { noveltyDrive: +0.60, fatigue: -0.45, persistence: -0.15 }
+
+    # Intercept large enough that the baseline state lands inside the range rather than
+    # clamped against the floor, where the field would stop responding at all.
+    assumptionVerificationLevel:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.50
+      terms: { stress: +0.35, persistence: -0.30, confidence: -0.20 }
+
+    testFrequency:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.35
+      terms: { stress: +0.40, confidence: -0.20, fatigue: -0.10 }
+
+    contextExpansionLevel:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.40
+      terms: { noveltyDrive: +0.35, fatigue: -0.55, stress: +0.10 }
+
+    changeRiskTolerance:
+      min: 0.0
+      max: 1.0
+      round: false
+      intercept: 0.25
+      terms: { confidence: +0.55, stress: -0.50, persistence: +0.10 }
+
+  regime:
+    cautiousVerification: 0.60
+    exploratoryExploration: 0.55
+
+# ---------------------------------------------------------------------------
+# Level-3 hard enforcement
+# ---------------------------------------------------------------------------
+enforcement:
+  enabled: true
+  patchLimit: true
+  retryLimit: true
+  verificationGate: true
+  # Safety valve: after this many consecutive blocks the next call is allowed through
+  # and the relaxation is logged. The agent can never be trapped.
+  maxConsecutiveBlocks: 2
+  # Pi has no sandbox, so bash can rewrite files and bypass edit limits. Off by default:
+  # suspected bypasses are detected and logged. Turn on for rigorous experiment runs.
+  guardBash: false
+  largeChangeLines: 120
+
+# ---------------------------------------------------------------------------
+# Appraisal
+# ---------------------------------------------------------------------------
+appraisal:
+  failureWindow: 24
+  repeatThreshold: 2
+  repeatSaturation: 5
+  fingerprintErrorLines: 3
+
+# ---------------------------------------------------------------------------
+# Runtime
+#
+# mode:
+#   active    full dynamics: transitions, context injection, enforcement
+#   static    injection and enforcement at frozen baseline state (isolates dynamics)
+#   observer  appraise and record only; zero behavioral influence
+#   off       inert
+# ---------------------------------------------------------------------------
+runtime:
+  mode: active
+  display: panel
+  telemetryDir: .pi/neuro/telemetry
+  telemetryEnabled: true
+  tickOnTurnEnd: true
+  historyLimit: 200

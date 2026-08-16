@@ -1,0 +1,37 @@
+# Profile: high-persistence
+#
+# Parameter set, not a personality. Persistence rests high, decays slowly, and is barely
+# moved by repeated failure — the closest thing here to a control for "does lowering
+# persistence actually do the work?".
+# Expected signature: more retries of equivalent approaches, later strategy changes, and
+# on the repeat-trap fixture, a higher rate of running out of steps.
+
+profile: high-persistence
+
+variables:
+  persistence:
+    baseline: 0.92
+    decayRate: 0.01
+    maxDeltaPerEvent: 0.08
+
+events:
+  REPEATED_FAILURE:
+    stress: +0.15
+    confidence: -0.10
+    persistence: -0.05
+    noveltyDrive: +0.06
+    fatigue: +0.04
+  ASSUMPTION_INVALIDATED:
+    stress: +0.10
+    confidence: -0.16
+    persistence: -0.03
+    noveltyDrive: +0.05
+
+policy:
+  fields:
+    retryTolerance:
+      min: 0
+      max: 6
+      round: true
+      intercept: 0.10
+      terms: { persistence: +0.85, stress: -0.10 }
