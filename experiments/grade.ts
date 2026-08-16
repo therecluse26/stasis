@@ -18,7 +18,26 @@
 import { execFileSync, execSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isCredentialKey } from "../src/runtime/env-file.ts";
 import type { FixtureDefinition } from "./types.ts";
+
+/**
+ * The environment a fixture's verification command runs in.
+ *
+ * Credentials are withheld. A fixture's tests exist to judge the agent's diff, they are
+ * not part of the trusted harness, and once a provider key is loaded from `.env` it would
+ * otherwise be sitting in the environment of every graded subprocess. Fixtures are offline
+ * by construction, so there is nothing legitimate to take away.
+ */
+function gradingEnv(): NodeJS.ProcessEnv {
+	const env: NodeJS.ProcessEnv = {};
+	for (const [key, value] of Object.entries(process.env)) {
+		if (!isCredentialKey(key)) env[key] = value;
+	}
+	env.CI = "1";
+	env.NO_COLOR = "1";
+	return env;
+}
 
 export interface GradeResult {
 	/** Hidden grading tests, plus the visible ones, all pass. */
@@ -38,7 +57,7 @@ function run(command: string, cwd: string, timeoutMs: number): { code: number; o
 			timeout: timeoutMs,
 			encoding: "utf8",
 			stdio: ["ignore", "pipe", "pipe"],
-			env: { ...process.env, CI: "1", NO_COLOR: "1" },
+			env: gradingEnv(),
 		});
 		return { code: 0, output };
 	} catch (error) {

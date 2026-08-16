@@ -81,6 +81,29 @@ Project and user overlays are picked up from `.pi/stasis.yaml` and
 `~/.pi/agent/stasis.yaml`. Environment overrides: `PI_STASIS_MODE`, `PI_STASIS_DISPLAY`,
 `PI_STASIS_ENFORCE=0`, `PI_STASIS_GUARD_BASH=1`, `PI_STASIS_TELEMETRY=0`.
 
+## `.env`
+
+Copy [`.env.example`](.env.example) to `.env` and fill in what you need — credentials, a
+profile, whatever you would otherwise be exporting by hand. `.env` and `.env.local` are
+gitignored.
+
+Precedence, lowest first: `.env` → `.env.local` → whatever is already in your shell. So a
+one-off still overrides the file:
+
+```bash
+PI_STASIS_MODE=off npm run experiment -- <benchmark>   # wins over .env
+```
+
+Values are literal: no `${VAR}` interpolation and no shell evaluation, because a
+configuration channel that can compute is one that can differ between two runs of the same
+study. A live `pi` session reads only the `PI_STASIS_*` variables from a `.env` and never
+alters its own environment, so a project's own secrets stay where they are. `/stasis config`
+names any file that actually contributed, and so does the telemetry run header.
+
+The study runner prints what it loaded, with credential values redacted, and takes
+`--dotenv PATH` or `--no-dotenv`. (`--dotenv`, not the obvious `--env-file`, because Node
+claims that name for itself anywhere in the command line.)
+
 ## Run a study
 
 ```bash
@@ -90,12 +113,16 @@ npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --dry-r
 # Validate the whole pipeline with a scripted agent — no credentials, no cost
 PI_STASIS_FAUX=1 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 1
 
-# The real thing
-export OPENROUTER_API_KEY=...      # or run `pi` once and `/login openrouter`
+# The real thing. Needs OPENROUTER_API_KEY in .env or the environment —
+# or run `pi` once and `/login openrouter`, which stores a token Pi finds itself.
 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 5
 ```
 
 Start small. Check the plan and the cost before committing to a full study.
+
+Keep `PI_STASIS_FAUX` out of `.env`. A stale `1` there would run an entire study against
+the scripted agent while every trial looked healthy; the runner warns when it finds that
+variable in a file rather than in your shell, but the warning is the last line of defence.
 
 ### Conditions
 
@@ -128,7 +155,7 @@ passing. "Passed the visible tests but not the contract" is reported as its own 
 ## Verifying it works
 
 ```bash
-npm test          # 216 tests: physiology, appraisal, enforcement, extension, harness
+npm test          # 250 tests: physiology, appraisal, enforcement, extension, harness
 npm run typecheck
 npm run demo:sequence            # deterministic replay, printed twice, asserted identical
 npm run demo:sequence -- exploratory

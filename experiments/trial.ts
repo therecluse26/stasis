@@ -22,6 +22,7 @@ import {
 	resolveCliModel,
 } from "@earendil-works/pi-coding-agent";
 import { createStasisExtension } from "../src/extension.ts";
+import { applyEnvFiles } from "../src/runtime/env-file.ts";
 import { EXTENSION_VERSION } from "../src/version.ts";
 import { createFauxAgent, fauxEnabled } from "./faux-agent.ts";
 import { grade, prepareWorkspace } from "./grade.ts";
@@ -50,6 +51,14 @@ function readRequest(): TrialRequest {
 
 async function main(): Promise<void> {
 	const request = readRequest();
+
+	// Under the runner this changes nothing: the parent already loaded these and a trial
+	// inherits its environment, and an already-set variable is never overwritten. It is
+	// here so that running one trial by hand authenticates the same way a study does.
+	//
+	// This cannot reach the physiology. The extension below is constructed with an
+	// explicit `env`, which suppresses `.env` loading in the config layer entirely.
+	applyEnvFiles({ dirs: [request.packageRoot] });
 	const startedAt = new Date().toISOString();
 	const started = Date.now();
 

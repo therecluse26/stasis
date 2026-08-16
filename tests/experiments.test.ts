@@ -197,6 +197,43 @@ describe("grading", () => {
 	});
 });
 
+describe("runner command line", () => {
+	const RUNNER = join(import.meta.dirname, "..", "experiments", "runner.ts");
+	const STUDY = join(import.meta.dirname, "..", "experiments", "benchmarks", "repeated-failure-study.yaml");
+
+	function dryRun(args: string[]): string {
+		return execFileSync("npx", ["tsx", RUNNER, STUDY, "--dry-run", ...args], {
+			encoding: "utf8",
+			env: { ...process.env, PI_STASIS_NO_ENV_FILE: "1" },
+		});
+	}
+
+	it("receives the dotenv flag instead of losing it to the runtime", () => {
+		// Node claims `--env-file` for itself anywhere in argv, even after the script name,
+		// so a flag by that name never arrives. The runner spells it `--dotenv` for exactly
+		// that reason, and this fails if anyone renames it back.
+		const path = join(scratch, "study.env");
+		writeFileSync(path, "PI_STASIS_PROFILE=exploratory\n", "utf8");
+
+		const output = execFileSync("npx", ["tsx", RUNNER, STUDY, "--dry-run", "--dotenv", path], { encoding: "utf8" });
+		expect(output).toContain("PI_STASIS_PROFILE=exploratory");
+		expect(output).toContain(path);
+	});
+
+	it("reports nothing loaded when told to ignore env files", () => {
+		expect(dryRun(["--no-dotenv"])).not.toContain("env file");
+	});
+
+	it("redacts credential values rather than printing them", () => {
+		const path = join(scratch, "secrets.env");
+		writeFileSync(path, "OPENROUTER_API_KEY=sk-should-never-appear\n", "utf8");
+
+		const output = execFileSync("npx", ["tsx", RUNNER, STUDY, "--dry-run", "--dotenv", path], { encoding: "utf8" });
+		expect(output).not.toContain("sk-should-never-appear");
+		expect(output).toContain("OPENROUTER_API_KEY=<redacted>");
+	});
+});
+
 describe("benchmark loading", () => {
 	const benchmarkPath = join(import.meta.dirname, "..", "experiments", "benchmarks", "repeated-failure-study.yaml");
 

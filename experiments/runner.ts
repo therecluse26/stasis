@@ -12,8 +12,9 @@
 
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { applyEnvFiles, describeEnvValues } from "../src/runtime/env-file.ts";
 import { loadBenchmark } from "./benchmark.ts";
 import { renderReport, summarize } from "./analysis.ts";
 import { CONDITION_MODES, type Benchmark, type Condition, type TrialRequest, type TrialResult } from "./types.ts";
@@ -28,6 +29,16 @@ interface CliOptions {
 	outputRoot: string;
 	dryRun: boolean;
 	concurrency?: number;
+	/**
+	 * An explicit `.env`, instead of the conventional `.env` / `.env.local`.
+	 *
+	 * Spelled `--dotenv` rather than the obvious `--env-file` because Node claims that
+	 * name for itself anywhere in argv, even after the script — `node script.js
+	 * --env-file x` never reaches the script at all. Do not "fix" this back.
+	 */
+	envFile?: string;
+	/** Ignore `.env` files entirely and use only what the shell provides. */
+	noEnvFile: boolean;
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -47,7 +58,10 @@ function parseArgs(argv: string[]): CliOptions {
 
 	const benchmarkPath = positional[0];
 	if (!benchmarkPath) {
-		throw new Error("usage: npm run experiment -- <benchmark.yaml> [--trials N] [--conditions a,b] [--task id]");
+		throw new Error(
+			"usage: npm run experiment -- <benchmark.yaml> [--trials N] [--conditions a,b] [--task id]\n" +
+				"                            [--dotenv PATH] [--no-dotenv]",
+		);
 	}
 
 	return {
@@ -58,7 +72,15 @@ function parseArgs(argv: string[]): CliOptions {
 		outputRoot: resolve(flags.get("out") ?? join(PACKAGE_ROOT, "runs")),
 		dryRun: flags.get("dry-run") === "true",
 		concurrency: flags.has("concurrency") ? Number(flags.get("concurrency")) : undefined,
+		envFile: flags.get("dotenv"),
+		noEnvFile: flags.get("no-dotenv") === "true",
 	};
+}
+
+/** Shorten a path for display when it sits inside the repository. */
+function displayPath(path: string): string {
+	const inside = relative(PACKAGE_ROOT, path);
+	return inside.startsWith("..") ? path : inside;
 }
 
 function runTrial(request: TrialRequest): Promise<TrialResult> {
@@ -163,6 +185,15 @@ function planTrials(benchmark: Benchmark, options: CliOptions, runDir: string, f
 
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
+
+	// Trials inherit this process's environment wholesale, so loading here is the only
+	// place credentials need to arrive. Anything already set in the shell is left alone.
+	const envLoad = applyEnvFiles({
+		dirs: [PACKAGE_ROOT, process.cwd()],
+		file: options.envFile,
+		disabled: options.noEnvFile,
+	});
+
 	const { benchmark, fixtures } = loadBenchmark(options.benchmarkPath);
 
 	// No Date.now in the physiology, but a study directory needs a name.
@@ -181,10 +212,24 @@ async function main(): Promise<void> {
 	console.log(`  trials       ${options.trials ?? benchmark.trials} per condition per task`);
 	console.log(`  total runs   ${plan.length}`);
 	console.log(`  output       ${runDir}`);
+	if (envLoad.files.length > 0 && Object.keys(envLoad.values).length > 0) {
+		console.log(`  env file     ${envLoad.files.map(displayPath).join(", ")} (${describeEnvValues(envLoad.values)})`);
+	}
+	for (const warning of envLoad.warnings) console.log(`  env warning  ${warning}`);
 	if (benchmark.model.provider === "openrouter" && !benchmark.model.routing) {
 		console.log(
 			"\n  note: OpenRouter routing is not pinned. Upstream provider varies between\n" +
 				"        requests, which adds variance unrelated to the hypothesis.",
+		);
+	}
+	// A stale PI_STASIS_FAUX=1 in a dotfile would run the entire study against the scripted
+	// agent while every trial looked healthy — the extensionInert guard cannot see it,
+	// because the extension does run. Nobody typed this one, so say so.
+	if (envLoad.values.PI_STASIS_FAUX === "1") {
+		console.log(
+			`\n  WARNING: PI_STASIS_FAUX=1 came from ${displayPath(envLoad.sources.PI_STASIS_FAUX!)}, not from your shell.\n` +
+				"           Every trial will run against the scripted agent, not a real model.\n" +
+				"           Remove it from the file, or pass --no-dotenv.",
 		);
 	}
 
@@ -199,7 +244,20 @@ async function main(): Promise<void> {
 	mkdirSync(runDir, { recursive: true });
 	writeFileSync(
 		join(runDir, "benchmark.json"),
-		`${JSON.stringify({ benchmark, conditions, plannedTrials: plan.length, startedAt: new Date().toISOString() }, null, 2)}\n`,
+		`${JSON.stringify(
+			{
+				benchmark,
+				conditions,
+				plannedTrials: plan.length,
+				startedAt: new Date().toISOString(),
+				// Names only. Which variables a file supplied is reproducibility metadata;
+				// their values are not, and one of them is usually a credential.
+				envFiles: envLoad.files,
+				envFileKeys: Object.keys(envLoad.values).sort(),
+			},
+			null,
+			2,
+		)}\n`,
 		"utf8",
 	);
 

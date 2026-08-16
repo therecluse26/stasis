@@ -13,6 +13,10 @@
  * Environment variables are the last layer because they are the only channel available
  * to the SDK experiment runner, which has no CLI flags to pass.
  *
+ * `PI_STASIS_*` variables may also come from a `.env` file, ranked below the real
+ * environment. Nothing else in a `.env` is read: a project this extension is visiting is
+ * far more likely to keep its own secrets there than anything meant for Stasis.
+ *
  * Loading never throws. A broken overlay is reported and skipped rather than taking down
  * the host session — a malformed YAML file in someone's home directory should not stop
  * them using Pi.
@@ -28,11 +32,14 @@ import {
 	buildConfig,
 	parseConfigSource,
 } from "../stasis/config.ts";
+import { envFileCandidates, readEnvFiles } from "./env-file.ts";
 
 export interface ConfigResolution {
 	loaded: LoadedConfig;
 	/** Non-fatal problems: files that could not be read or parsed, unknown profiles. */
 	warnings: string[];
+	/** `.env` files that supplied at least one `PI_STASIS_*` value. */
+	envFiles: string[];
 }
 
 export interface ResolveOptions {
@@ -42,6 +49,12 @@ export interface ResolveOptions {
 	profile?: string;
 	mode?: StasisMode;
 	env?: NodeJS.ProcessEnv;
+	/**
+	 * `.env` files to consult, overriding the conventional candidates. Supplying this is
+	 * the only way to combine an explicit `env` with file loading, which is what lets tests
+	 * exercise the layering without depending on the checkout they run in.
+	 */
+	envFiles?: string[];
 	/** Extra overlay files, highest priority. Used by tests and the experiment runner. */
 	extraFiles?: string[];
 	/** Inline overlay applied last of all. Used by the experiment runner. */
@@ -49,6 +62,8 @@ export interface ResolveOptions {
 }
 
 const MODES: readonly StasisMode[] = ["active", "static", "observer", "off"];
+
+const STASIS_VARIABLE = /^PI_STASIS_/;
 
 function readOverlay(path: string, warnings: string[]): { label: string; data: unknown } | undefined {
 	if (!existsSync(path)) return undefined;
@@ -88,9 +103,42 @@ function environmentOverlay(env: NodeJS.ProcessEnv, warnings: string[]): unknown
 	return overlay;
 }
 
+/**
+ * The environment to read, and which `.env` files shaped it.
+ *
+ * An explicitly supplied `env` is authoritative and complete — no file is consulted for
+ * it. That is the seam that keeps a trial hermetic: `experiments/trial.ts` passes `{}`
+ * precisely so no ambient variable can change one arm of a study, and it is what stops the
+ * test suite depending on whichever `.env` happens to sit in this checkout.
+ *
+ * Only `PI_STASIS_*` keys are taken from a file, and only where the real environment has
+ * not already spoken.
+ */
+function resolveEnv(options: ResolveOptions): { env: NodeJS.ProcessEnv; files: string[]; warnings: string[] } {
+	if (options.env !== undefined && options.envFiles === undefined) {
+		return { env: options.env, files: [], warnings: [] };
+	}
+
+	const load = readEnvFiles(options.envFiles ?? envFileCandidates([options.packageRoot, options.cwd]));
+	const fromFile: Record<string, string> = {};
+	const files: string[] = [];
+	for (const [key, value] of Object.entries(load.values)) {
+		if (!STASIS_VARIABLE.test(key)) continue;
+		fromFile[key] = value;
+		const source = load.sources[key];
+		// Name only the files that actually contributed. A `.env` holding nothing but a
+		// provider key did not shape this configuration and must not be listed as if it had.
+		if (source !== undefined && !files.includes(source)) files.push(source);
+	}
+
+	return { env: { ...fromFile, ...(options.env ?? process.env) }, files, warnings: load.warnings };
+}
+
 export function resolveConfig(options: ResolveOptions): ConfigResolution {
-	const env = options.env ?? process.env;
-	const warnings: string[] = [];
+	const ambient = resolveEnv(options);
+	const env = ambient.env;
+	const envFiles = ambient.files;
+	const warnings: string[] = [...ambient.warnings];
 	const overlays: Array<{ label: string; data: unknown }> = [];
 
 	const shipped = readOverlay(join(options.packageRoot, "config", "default.yaml"), warnings);
@@ -114,18 +162,22 @@ export function resolveConfig(options: ResolveOptions): ConfigResolution {
 		if (overlay) overlays.push(overlay);
 	}
 
-	overlays.push({ label: "env", data: environmentOverlay(env, warnings) });
+	// The label carries provenance into `LoadedConfig.sources`, which is what `/stasis
+	// config` prints and what the telemetry run header records. A value that came from a
+	// file should never look like one that came from the shell.
+	const envLabel = envFiles.length > 0 ? `env (+ ${envFiles.join(", ")})` : "env";
+	overlays.push({ label: envLabel, data: environmentOverlay(env, warnings) });
 	if (options.mode) overlays.push({ label: "explicit-mode", data: { runtime: { mode: options.mode } } });
 	if (options.inline !== undefined) overlays.push({ label: "inline", data: options.inline });
 
 	try {
-		return { loaded: buildConfig(overlays), warnings };
+		return { loaded: buildConfig(overlays), warnings, envFiles };
 	} catch (error) {
 		// A bad overlay must not prevent the session from starting. Fall back to the
 		// built-in physiology and say loudly what was dropped, so a study is never
 		// silently run on a configuration nobody chose.
 		const detail = error instanceof StasisConfigError ? error.message : String(error);
 		warnings.push(`Falling back to built-in physiology: ${detail}`);
-		return { loaded: buildConfig(), warnings };
+		return { loaded: buildConfig(), warnings, envFiles };
 	}
 }

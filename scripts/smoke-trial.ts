@@ -15,9 +15,13 @@ import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { loadFixture } from "../experiments/benchmark.ts";
+import { applyEnvFiles } from "../src/runtime/env-file.ts";
 import type { Condition, TrialRequest } from "../experiments/types.ts";
 
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
+// Before the PI_STASIS_SMOKE_* reads below, and before the trial subprocess inherits it.
+applyEnvFiles({ dirs: [PACKAGE_ROOT, process.cwd()] });
 
 const fixtureId = process.argv[2] ?? "bug-003-easy-control";
 const condition = (process.argv[3] ?? "stasis") as Condition;

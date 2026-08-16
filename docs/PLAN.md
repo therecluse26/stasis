@@ -7,7 +7,7 @@ what a future session needs to know before touching anything.
 - **Usage:** [../README.md](../README.md)
 - **Original specification:** [../prompts/INITIAL_PROMPT.md](../prompts/INITIAL_PROMPT.md)
 
-**Where things stand:** the v0.1 Definition of Done is met. 216 tests pass, typecheck is
+**Where things stand:** the v0.1 Definition of Done is met. 250 tests pass, typecheck is
 clean, and the full study pipeline has been run end to end with a scripted agent. The
 system has **never been run against a real model** — there are no provider credentials on
 this machine. Several events in the vocabulary are still never emitted; the significant
@@ -19,7 +19,8 @@ one is `STRATEGY_CHANGE`.
 
 ```bash
 npm install --ignore-scripts
-npm test                     # 216 tests, no credentials needed
+cp .env.example .env         # credentials and settings, instead of exporting by hand
+npm test                     # 250 tests, no credentials needed
 npm run typecheck
 npm run demo:sequence        # deterministic replay, printed twice, asserted identical
 
@@ -101,7 +102,7 @@ Deterministic engine with no Pi dependency.
 - [x] Three discriminative fixtures, each verified to fail shipped / pass when correctly fixed / reject the shortcut
 - [x] `extensionInert` self-check that invalidates a run where extensions never activated
 - [x] `PI_STASIS_FAUX=1` scripted agent for credential-free pipeline validation — `experiments/faux-agent.ts`
-- [x] Tests: `tests/experiments.test.ts` (27), `tests/live-session.test.ts` (5, real Pi session)
+- [x] Tests: `tests/experiments.test.ts` (30), `tests/live-session.test.ts` (5, real Pi session)
 
 ### ✅ M6 — Metrics and analysis
 
@@ -112,6 +113,25 @@ Deterministic engine with no Pi dependency.
 - [x] Spread printed alongside every mean; small-n caveat printed automatically
 - [x] `results.jsonl`, `results.json`, `benchmark.json` written per run
 - [ ] **`renderTrajectoryCsv()` exists but is never called** — see [G3](#g3-trajectory-export-is-not-wired-in)
+
+### ✅ M7 — `.env` support
+
+Added 2026-08-16, after v0.1. Credentials and settings no longer have to be exported by hand.
+
+- [x] Parser and loaders, no dependency — `src/runtime/env-file.ts`
+- [x] Precedence: `.env` → `.env.local` → real shell environment, matching Node's own `--env-file`
+- [x] Literal values only — no `${VAR}` interpolation, so a file cannot make two runs differ
+- [x] CLI entry points apply into `process.env`; trials inherit it — `runner.ts`, `trial.ts`, `smoke-trial.ts`
+- [x] The extension reads **only `PI_STASIS_*`** and never mutates the host process's environment
+- [x] An explicit `env` option suppresses file loading entirely, which is what keeps
+      `trial.ts`'s per-arm firewall and the hermetic test suite intact
+- [x] Provenance: contributing files named in `LoadedConfig.sources` → `/stasis config` →
+      `run_header.configSources`; a file that supplied nothing is not listed
+- [x] Runner prints what it loaded with credential values redacted; records names in `benchmark.json`
+- [x] Loud warning when `PI_STASIS_FAUX` arrives from a file rather than the shell
+- [x] Credentials withheld from fixture verification subprocesses — `experiments/grade.ts`
+- [x] `.env.example` committed; `.env` and `.env.local` ignored
+- [x] Tests: `tests/env-file.test.ts` (31), plus 3 runner-CLI tests in `tests/experiments.test.ts`
 
 ---
 
@@ -296,6 +316,11 @@ Each of these was hit and cost real time. All are now covered by a test.
    silently reappraised as a code failure, letting enforcement manufacture the failures
    that justify more enforcement. Pinned by a test that runs a real refusal through the
    classifier.
+8. **Node claims `--env-file` for itself anywhere in argv, even after the script name.**
+   `node script.js --env-file x` never reaches the script; with a missing file the process
+   dies with a bare `not found`, and with a real one Node loads it silently on its own
+   terms. The runner's flag is therefore `--dotenv`. Pinned by a runner-CLI test in
+   `tests/experiments.test.ts`.
 
 ---
 
@@ -303,7 +328,7 @@ Each of these was hit and cost real time. All are now covered by a test.
 
 | Command | What it proves | Credentials |
 |---|---|---|
-| `npm test` | 216 tests across physiology, appraisal, enforcement, extension, harness | no |
+| `npm test` | 250 tests across physiology, appraisal, enforcement, extension, harness | no |
 | `npm run typecheck` | types agree with installed Pi 0.84.2 | no |
 | `npm run demo:sequence` | identical inputs → byte-identical state history | no |
 | `PI_STASIS_FAUX=1 npm run experiment -- <benchmark> --trials 1` | runner → trial → grade → metrics → report | no |
@@ -311,7 +336,7 @@ Each of these was hit and cost real time. All are now covered by a test.
 | `pi -e src/extension.ts` in a project | interactive behavior | **yes** |
 
 Test distribution: `engine` 30, `policy` 38, `appraisal` 66, `config-files` 17,
-`extension` 32, `experiments` 27, `live-session` 5, `version` 1.
+`extension` 32, `experiments` 30, `env-file` 31, `live-session` 5, `version` 1.
 
 ### Expected faux-study signature
 

@@ -186,6 +186,7 @@ export function createStasisExtension(options: StasisExtensionOptions = {}) {
 					profile: options.profile,
 					mode: options.mode,
 					env: options.env,
+					envFiles: options.envFiles,
 					extraFiles: options.extraFiles,
 					inline: options.inline,
 				});

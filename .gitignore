@@ -3,4 +3,9 @@ runs/
 .pi/stasis/
 *.log
 
+# Credentials and local overrides. `.env.example` is the documented template and is
+# meant to be committed; `*.env` alone would not have covered `.env.local`.
+.env
+.env.local
 *.env
+!.env.example
