@@ -12,7 +12,7 @@
 #            This is what makes the behavioral metrics comparable between arms.
 #   static   same injected block and enforcement, but physiology frozen at baseline.
 #            Separates the effect of the dynamics from the effect of the extra prompt text.
-#   neuro    full dynamics.
+#   stasis    full dynamics.
 #
 # Add `bare` to check that observer mode really is inert.
 
@@ -40,7 +40,7 @@ profile: balanced
 
 conditions:
   - control
-  - neuro
+  - stasis
 
 tasks:
   - id: bug-001-repeat-trap

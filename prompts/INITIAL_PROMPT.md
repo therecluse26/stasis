@@ -130,18 +130,18 @@ Implement approximately:
                                          │
                                          ▼
                               ┌─────────────────────┐
-                              │   Neuro Extension   │
+                              │   Stasis Extension   │
                               │                     │
                               │ Event Appraisal     │
                               │ Failure Detection   │
-                              │ Neuro Engine        │
+                              │ Stasis Engine        │
                               │ Homeostasis         │
                               │ Policy Adapter      │
                               │ Enforcement         │
                               │ Telemetry           │
                               └──────────┬──────────┘
                                          │
-                                  NeuroState
+                                  StasisState
                                          │
                                          ▼
                                   AgentPolicy
@@ -173,12 +173,12 @@ Additionally:
 
 ---
 
-# 4. NeuroState
+# 4. StasisState
 
 Start with a small state vector:
 
 ```ts
-export interface NeuroState {
+export interface StasisState {
   stress: number;
   confidence: number;
   noveltyDrive: number;
@@ -196,7 +196,7 @@ Every value is normalized:
 Each variable has:
 
 ```ts
-interface NeuroVariableConfig {
+interface StasisVariableConfig {
   baseline: number;
   decayRate: number;
   min: number;
@@ -305,7 +305,7 @@ This variable is especially important for preventing repetitive agent loops.
 
 ---
 
-# 6. Neuro Engine
+# 6. Stasis Engine
 
 Implement the physiology independently from Pi.
 
@@ -314,22 +314,22 @@ The core API should resemble:
 ```ts
 interface NeuromodulatorEngine {
   transition(
-    current: NeuroState,
+    current: StasisState,
     event: AppraisedEvent,
     context: TransitionContext
-  ): NeuroTransition;
+  ): StasisTransition;
 }
 ```
 
 Where:
 
 ```ts
-interface NeuroTransition {
-  before: NeuroState;
-  delta: NeuroStateDelta;
-  homeostasis: NeuroStateDelta;
-  interactions: NeuroStateDelta;
-  after: NeuroState;
+interface StasisTransition {
+  before: StasisState;
+  delta: StasisStateDelta;
+  homeostasis: StasisStateDelta;
+  interactions: StasisStateDelta;
+  after: StasisState;
   reasons: TransitionReason[];
 }
 ```
@@ -435,7 +435,7 @@ how physiology responds
 
 The appraisal engine identifies events.
 
-The neuro engine determines their physiological effects.
+The stasis engine determines their physiological effects.
 
 Prefer deterministic appraisal whenever possible.
 
@@ -546,7 +546,7 @@ Implement:
 
 ```ts
 interface PolicyAdapter {
-  derive(state: NeuroState): AgentPolicy;
+  derive(state: StasisState): AgentPolicy;
 }
 ```
 
@@ -620,7 +620,7 @@ policy.maxPatchLines = 50
 If the agent attempts a 400-line mutation:
 
 ```text
-BLOCKED_BY_NEURO_POLICY
+BLOCKED_BY_STASIS_POLICY
 ```
 
 Return an explanation to the agent.
@@ -642,13 +642,13 @@ Implement this primarily as a project-local Pi extension during development.
 Conceptual package structure:
 
 ```text
-pi-neuro/
+stasis/
 ├── package.json
 ├── README.md
 ├── src/
 │   ├── extension.ts
 │   │
-│   ├── neuro/
+│   ├── stasis/
 │   │   ├── state.ts
 │   │   ├── config.ts
 │   │   ├── engine.ts
@@ -667,14 +667,14 @@ pi-neuro/
 │   │   └── enforcement.ts
 │   │
 │   ├── persistence/
-│   │   └── neuro-state-store.ts
+│   │   └── stasis-state-store.ts
 │   │
 │   ├── telemetry/
 │   │   ├── recorder.ts
 │   │   └── schema.ts
 │   │
 │   └── ui/
-│       └── neuro-status.ts
+│       └── stasis-status.ts
 │
 ├── experiments/
 │   ├── runner.ts
@@ -708,7 +708,7 @@ Conceptually:
 pi.on("tool_result", async (event, ctx) => {
   const appraisal = await appraiser.appraise(event);
 
-  const transition = neuroEngine.transition(
+  const transition = stasisEngine.transition(
     state,
     appraisal,
     transitionContext
@@ -755,7 +755,7 @@ The physiology must survive across turns in a Pi session.
 Persist:
 
 ```text
-current NeuroState
+current StasisState
 configuration version
 state transition number
 recent failure fingerprints
@@ -847,7 +847,7 @@ Integrate a compact status display into Pi's TUI using the supported extension U
 Aim for something like:
 
 ```text
-╭─ Neuro ─────────────────────────────╮
+╭─ Stasis ─────────────────────────────╮
 │ stress       ███████░░░  .71 ↑     │
 │ confidence   ████░░░░░░  .42 ↓     │
 │ novelty      ██████░░░░  .61 ↑     │
@@ -872,38 +872,38 @@ Add useful extension commands using Pi's current command API.
 Desired functionality:
 
 ```text
-/neuro
+/stasis
 ```
 
 Show current state and derived policy.
 
 ```text
-/neuro history
+/stasis history
 ```
 
 Show recent state transitions.
 
 ```text
-/neuro reset
+/stasis reset
 ```
 
 Return state to configured baselines.
 
 ```text
-/neuro enable
-/neuro disable
+/stasis enable
+/stasis disable
 ```
 
 Toggle neuromodulation without changing the rest of the Pi session configuration.
 
 ```text
-/neuro config
+/stasis config
 ```
 
 Show active endocrine configuration.
 
 ```text
-/neuro debug
+/stasis debug
 ```
 
 Show detailed appraisal/transition information.
@@ -1018,7 +1018,7 @@ model:
 
 conditions:
   - control
-  - neuro
+  - stasis
 
 tasks:
   - id: bug-001
@@ -1060,7 +1060,7 @@ wall-clock duration
 final diff size
 ```
 
-For neuro runs additionally record:
+For stasis runs additionally record:
 
 ```text
 average stress
@@ -1129,8 +1129,8 @@ extension version
 git commit
 model identifier
 model settings
-NeuroConfig
-initial NeuroState
+StasisConfig
+initial StasisState
 benchmark definition
 repository commit
 environment metadata
@@ -1169,7 +1169,7 @@ CONTROL:
 normal policy
 
 EXPERIMENT:
-policy dynamically modified by NeuroState
+policy dynamically modified by StasisState
 ```
 
 Keep everything else as equal as possible.
@@ -1351,8 +1351,8 @@ Implement incrementally.
 Build:
 
 ```text
-NeuroState
-NeuroConfig
+StasisState
+StasisConfig
 NeuromodulatorEngine
 homeostasis
 event transitions
@@ -1377,8 +1377,8 @@ session initialization
 tool result observation
 state transitions
 context injection
-/neuro
-/neuro reset
+/stasis
+/stasis reset
 ```
 
 Do not enforce tool restrictions yet.
@@ -1436,7 +1436,7 @@ same model
 same repository
 
 CONTROL × N
-NEURO × N
+STASIS × N
 ```
 
 Produce machine-readable results.
@@ -1448,7 +1448,7 @@ Produce machine-readable results.
 Generate summaries such as:
 
 ```text
-                              CONTROL       NEURO
+                              CONTROL       STASIS
 success rate                    68%          76%
 mean attempts                   8.4          6.1
 repeated failures               3.2          1.4
@@ -1457,7 +1457,7 @@ strategy changes                1.2          2.7
 mean final diff               182 LOC      131 LOC
 ```
 
-Also produce NeuroState trajectory data suitable for graphing.
+Also produce StasisState trajectory data suitable for graphing.
 
 ---
 
@@ -1522,22 +1522,22 @@ pi
 
 and interact with Pi normally while the extension:
 
-1. initializes persistent NeuroState,
+1. initializes persistent StasisState,
 2. observes coding-tool outcomes,
 3. identifies at least test success/failure/repeated failure,
-4. updates NeuroState deterministically,
+4. updates StasisState deterministically,
 5. derives an AgentPolicy,
 6. injects that policy into subsequent model context,
-7. displays current state with `/neuro`,
+7. displays current state with `/stasis`,
 8. logs every transition,
-9. allows `/neuro reset`,
+9. allows `/stasis reset`,
 10. allows neuromodulation to be disabled.
 
 Additionally, provide one automated Pi SDK experiment that executes the same fixture bug under:
 
 ```text
 control
-neuro
+stasis
 ```
 
 and outputs comparative metrics.

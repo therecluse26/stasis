@@ -21,7 +21,7 @@
  * file must never be able to wedge the host.
  */
 
-import type { NeuroConfig } from "../neuro/config.ts";
+import type { StasisConfig } from "../stasis/config.ts";
 import { countLines, editChangedLines } from "../appraisal/appraiser.ts";
 import { detectMutationBypass } from "../appraisal/command-classifier.ts";
 import type { FailureDetector } from "../appraisal/failure-detector.ts";
@@ -69,7 +69,7 @@ const asString = (value: unknown): string | undefined => (typeof value === "stri
  * argue about the policy, and it never implies the limit can be changed by asking.
  */
 function explain(rule: EnforcementRule, body: string): string {
-	return `BLOCKED_BY_NEURO_POLICY (${rule})\n\n${body}`;
+	return `BLOCKED_BY_STASIS_POLICY (${rule})\n\n${body}`;
 }
 
 export class Enforcement {
@@ -77,7 +77,7 @@ export class Enforcement {
 	/** Reasons already used for a given tool call, so one call is never blocked twice alike. */
 	private blockedReasons = new Map<string, Set<EnforcementRule>>();
 
-	constructor(private readonly config: NeuroConfig) {}
+	constructor(private readonly config: StasisConfig) {}
 
 	get consecutive(): number {
 		return this.consecutiveBlocks;

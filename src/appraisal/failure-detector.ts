@@ -10,8 +10,8 @@
  * State is a bounded rolling window, serializable so it survives session resume.
  */
 
-import type { AppraisalConfig } from "../neuro/config.ts";
-import { clamp01 } from "../neuro/state.ts";
+import type { AppraisalConfig } from "../stasis/config.ts";
+import { clamp01 } from "../stasis/state.ts";
 import type { CommandKind } from "./events.ts";
 
 export interface FailureRecord {

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { appraisedEvent } from "../src/appraisal/events.ts";
-import { baselineState, buildConfig, DEFAULT_CONFIG } from "../src/neuro/config.ts";
-import { createEngine, replay, severityScale } from "../src/neuro/engine.ts";
-import { homeostasisDelta, steadyState } from "../src/neuro/homeostasis.ts";
-import { activation, interactionDelta } from "../src/neuro/interactions.ts";
-import { NEURO_VARIABLES, type NeuroState, isValidState, quantize } from "../src/neuro/state.ts";
+import { baselineState, buildConfig, DEFAULT_CONFIG } from "../src/stasis/config.ts";
+import { createEngine, replay, severityScale } from "../src/stasis/engine.ts";
+import { homeostasisDelta, steadyState } from "../src/stasis/homeostasis.ts";
+import { activation, interactionDelta } from "../src/stasis/interactions.ts";
+import { STASIS_VARIABLES, type StasisState, isValidState, quantize } from "../src/stasis/state.ts";
 
 const { config } = buildConfig();
 const engine = createEngine(config);
@@ -13,7 +13,7 @@ const base = () => baselineState(config);
 const ev = (type: Parameters<typeof appraisedEvent>[0]["type"], extra = {}) => appraisedEvent({ type, ...extra });
 
 /** Feed the same event repeatedly and return the resulting state. */
-function drive(initial: NeuroState, type: Parameters<typeof ev>[0], times: number): NeuroState {
+function drive(initial: StasisState, type: Parameters<typeof ev>[0], times: number): StasisState {
 	let state = initial;
 	for (let i = 0; i < times; i++) {
 		state = engine.transition(state, ev(type), { step: i + 1 }).after;
@@ -30,7 +30,7 @@ describe("event transitions", () => {
 	});
 
 	it("TEST_SUCCESS reduces stress and raises confidence", () => {
-		const elevated: NeuroState = { ...base(), stress: 0.6, confidence: 0.3 };
+		const elevated: StasisState = { ...base(), stress: 0.6, confidence: 0.3 };
 		const { after } = engine.transition(elevated, ev("TEST_SUCCESS"), { step: 1 });
 		expect(after.stress).toBeLessThan(elevated.stress);
 		expect(after.confidence).toBeGreaterThan(elevated.confidence);
@@ -42,7 +42,7 @@ describe("event transitions", () => {
 	});
 
 	it("contradictory evidence lowers confidence", () => {
-		const before: NeuroState = { ...base(), confidence: 0.8 };
+		const before: StasisState = { ...base(), confidence: 0.8 };
 		const { after } = engine.transition(before, ev("ASSUMPTION_INVALIDATED"), { step: 1 });
 		expect(after.confidence).toBeLessThan(before.confidence);
 	});
@@ -96,7 +96,7 @@ describe("event transitions", () => {
 		// than by supplying an empty mapping.
 		const stripped = buildConfig([{ label: "test", data: { events: { TICK: { fatigue: 0 } } } }]).config;
 		const strippedEngine = createEngine(stripped);
-		const elevated: NeuroState = { ...baselineState(stripped), stress: 0.9 };
+		const elevated: StasisState = { ...baselineState(stripped), stress: 0.9 };
 		const { after, delta } = strippedEngine.transition(elevated, ev("TICK"), { step: 1 });
 		expect(delta).toEqual({});
 		expect(after.stress).toBeLessThan(elevated.stress);
@@ -104,13 +104,13 @@ describe("event transitions", () => {
 
 	it("records an attributable reason for every contribution", () => {
 		// Displaced from baseline so the homeostatic pull is non-zero and therefore reported.
-		const displaced: NeuroState = { ...base(), stress: 0.6, confidence: 0.3 };
+		const displaced: StasisState = { ...base(), stress: 0.6, confidence: 0.3 };
 		const { reasons } = engine.transition(displaced, ev("REPEATED_FAILURE", { uncertainty: 0.5 }), { step: 1 });
 		expect(reasons.some((r) => r.kind === "event")).toBe(true);
 		expect(reasons.some((r) => r.kind === "modulator")).toBe(true);
 		expect(reasons.some((r) => r.kind === "homeostasis")).toBe(true);
 		for (const reason of reasons) {
-			expect(NEURO_VARIABLES).toContain(reason.variable);
+			expect(STASIS_VARIABLES).toContain(reason.variable);
 			expect(Number.isFinite(reason.amount)).toBe(true);
 		}
 	});
@@ -162,7 +162,7 @@ describe("bounds", () => {
 
 describe("homeostasis", () => {
 	it("pulls every variable back toward its baseline", () => {
-		const displaced: NeuroState = {
+		const displaced: StasisState = {
 			stress: 0.9,
 			confidence: 0.1,
 			noveltyDrive: 0.9,
@@ -181,7 +181,7 @@ describe("homeostasis", () => {
 	});
 
 	it("returns a displaced state to baseline given only neutral ticks", () => {
-		const displaced: NeuroState = { ...base(), stress: 0.95, confidence: 0.05, persistence: 0.05 };
+		const displaced: StasisState = { ...base(), stress: 0.95, confidence: 0.05, persistence: 0.05 };
 		const tickOnly = buildConfig([{ label: "test", data: { events: { TICK: { fatigue: 0 } } } }]).config;
 		const tickEngine = createEngine(tickOnly);
 		let state = displaced;
@@ -218,14 +218,14 @@ describe("no runaway feedback", () => {
 	it("verification does not manufacture the stress that demanded it", () => {
 		// The spec's explicit anti-pathology requirement: inspecting must not itself
 		// raise stress, or a cautious policy would escalate its own caution forever.
-		const stressed: NeuroState = { ...base(), stress: 0.75 };
+		const stressed: StasisState = { ...base(), stress: 0.75 };
 		let state = stressed;
 		for (let i = 0; i < 50; i++) state = engine.transition(state, ev("INSPECTION"), { step: i }).after;
 		expect(state.stress).toBeLessThan(stressed.stress);
 	});
 
 	it("a successful verification loop returns stress to baseline", () => {
-		let state: NeuroState = { ...base(), stress: 0.85, confidence: 0.2 };
+		let state: StasisState = { ...base(), stress: 0.85, confidence: 0.2 };
 		for (let i = 0; i < 40; i++) {
 			state = engine.transition(state, ev("INSPECTION"), { step: i * 2 }).after;
 			state = engine.transition(state, ev("TEST_SUCCESS"), { step: i * 2 + 1 }).after;
@@ -267,7 +267,7 @@ describe("no runaway feedback", () => {
 		const reversed = buildConfig([
 			{ label: "test", data: { interactions: { rules: [...forward].reverse() } } },
 		]).config;
-		const state: NeuroState = { stress: 0.85, confidence: 0.8, noveltyDrive: 0.5, fatigue: 0.75, persistence: 0.2 };
+		const state: StasisState = { stress: 0.85, confidence: 0.8, noveltyDrive: 0.5, fatigue: 0.75, persistence: 0.2 };
 		expect(interactionDelta(state, reversed).delta).toEqual(interactionDelta(state, config).delta);
 	});
 });
@@ -302,7 +302,7 @@ describe("determinism", () => {
 	it("keeps every value at the declared precision", () => {
 		const { states } = replay(engine, base(), sequence);
 		for (const state of states) {
-			for (const variable of NEURO_VARIABLES) {
+			for (const variable of STASIS_VARIABLES) {
 				expect(state[variable]).toBe(quantize(state[variable]));
 			}
 		}

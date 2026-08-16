@@ -11,12 +11,12 @@
 
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname, isAbsolute, join } from "node:path";
-import { type NeuroTelemetryRecord, TELEMETRY_SCHEMA_VERSION } from "./schema.ts";
+import { type StasisTelemetryRecord, TELEMETRY_SCHEMA_VERSION } from "./schema.ts";
 
 export interface Recorder {
-	record(record: NeuroTelemetryRecord): void;
-	/** Records held in memory, for `/neuro history` and for tests. */
-	recent(limit?: number): NeuroTelemetryRecord[];
+	record(record: StasisTelemetryRecord): void;
+	/** Records held in memory, for `/stasis history` and for tests. */
+	recent(limit?: number): StasisTelemetryRecord[];
 	readonly path: string | undefined;
 	close(): void;
 }
@@ -36,7 +36,7 @@ export interface RecorderOptions {
 
 /** Keeps recent records in memory and never touches the filesystem. */
 export function createMemoryRecorder(historyLimit = 200): Recorder {
-	const history: NeuroTelemetryRecord[] = [];
+	const history: StasisTelemetryRecord[] = [];
 	return {
 		path: undefined,
 		record(record) {
@@ -56,7 +56,7 @@ export function resolveTelemetryPath(options: Pick<RecorderOptions, "target" | "
 }
 
 export function createRecorder(options: RecorderOptions): Recorder {
-	const history: NeuroTelemetryRecord[] = [];
+	const history: StasisTelemetryRecord[] = [];
 	if (!options.enabled) {
 		const memory = createMemoryRecorder(options.historyLimit);
 		return memory;
@@ -94,7 +94,7 @@ export function createRecorder(options: RecorderOptions): Recorder {
 }
 
 /** Fills in the fields every record shares, so call sites state only what differs. */
-export function stamp<T extends NeuroTelemetryRecord>(
+export function stamp<T extends StasisTelemetryRecord>(
 	partial: Omit<T, "schema" | "timestamp">,
 	now: () => Date = () => new Date(),
 ): T {

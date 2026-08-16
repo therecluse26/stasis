@@ -23,7 +23,7 @@ const ABORTED_PATTERN = /Command aborted\s*$/m;
  * Kept in sync with `explain()` in policy/enforcement.ts; a test pins the two together,
  * because a drift here would silently make every refusal read as a code failure.
  */
-export const BLOCK_MARKER = /BLOCKED[_ ]BY[_ ]NEURO[_ ]POLICY/i;
+export const BLOCK_MARKER = /BLOCKED[_ ]BY[_ ]STASIS[_ ]POLICY/i;
 
 export type BashFailureKind = "exit" | "timeout" | "aborted" | "blocked" | "unknown" | "none";
 

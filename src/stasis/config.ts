@@ -10,13 +10,13 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { parse as parseYaml } from "yaml";
 import { AGENT_EVENT_TYPES, type AgentEventType } from "../appraisal/events.ts";
-import { NEURO_VARIABLES, type NeuroState, type NeuroStateDelta, type NeuroVariable } from "./state.ts";
+import { STASIS_VARIABLES, type StasisState, type StasisStateDelta, type StasisVariable } from "./state.ts";
 
 // ---------------------------------------------------------------------------
 // Schema
 // ---------------------------------------------------------------------------
 
-export interface NeuroVariableConfig {
+export interface StasisVariableConfig {
 	baseline: number;
 	decayRate: number;
 	min: number;
@@ -38,8 +38,8 @@ export interface SeverityConfig {
  * event's `uncertainty` and `novelty` fields.
  */
 export interface ModulatorConfig {
-	uncertainty: NeuroStateDelta;
-	novelty: NeuroStateDelta;
+	uncertainty: StasisStateDelta;
+	novelty: StasisStateDelta;
 }
 
 export type InteractionDirection = "above" | "below";
@@ -51,8 +51,8 @@ export type InteractionDirection = "above" | "below";
  */
 export interface InteractionRule {
 	id: string;
-	source: NeuroVariable;
-	target: NeuroVariable;
+	source: StasisVariable;
+	target: StasisVariable;
 	/**
 	 * How far this rule may shift its target's resting point, signed, at full activation.
 	 *
@@ -90,7 +90,7 @@ export interface PolicyFieldConfig {
 	max: number;
 	round: boolean;
 	intercept: number;
-	terms: Partial<Record<NeuroVariable, number>>;
+	terms: Partial<Record<StasisVariable, number>>;
 }
 
 export type PolicyFieldName =
@@ -155,7 +155,7 @@ export interface AppraisalConfig {
 	fingerprintErrorLines: number;
 }
 
-export type NeuroMode = "active" | "static" | "observer" | "off";
+export type StasisMode = "active" | "static" | "observer" | "off";
 export type DisplayMode = "panel" | "status" | "off";
 
 export interface RuntimeConfig {
@@ -165,22 +165,22 @@ export interface RuntimeConfig {
 	 * observer - appraise and record only; zero behavioral influence
 	 * off      - extension inert
 	 */
-	mode: NeuroMode;
+	mode: StasisMode;
 	display: DisplayMode;
 	/** Directory for telemetry JSONL, relative to cwd unless absolute. */
 	telemetryDir: string;
 	telemetryEnabled: boolean;
 	/** Emit a TICK event at the end of every turn, giving time-like decay. */
 	tickOnTurnEnd: boolean;
-	/** Number of transitions retained in memory for `/neuro history`. */
+	/** Number of transitions retained in memory for `/stasis history`. */
 	historyLimit: number;
 }
 
-export interface NeuroConfig {
+export interface StasisConfig {
 	version: string;
 	profile: string;
-	variables: Record<NeuroVariable, NeuroVariableConfig>;
-	events: Partial<Record<AgentEventType, NeuroStateDelta>>;
+	variables: Record<StasisVariable, StasisVariableConfig>;
+	events: Partial<Record<AgentEventType, StasisStateDelta>>;
 	severity: SeverityConfig;
 	modulators: ModulatorConfig;
 	interactions: InteractionsConfig;
@@ -192,7 +192,7 @@ export interface NeuroConfig {
 
 /** A config plus the hash of its normalized form, recorded in every telemetry header. */
 export interface LoadedConfig {
-	config: NeuroConfig;
+	config: StasisConfig;
 	hash: string;
 	sources: string[];
 }
@@ -201,7 +201,7 @@ export interface LoadedConfig {
 // Baseline state
 // ---------------------------------------------------------------------------
 
-export function baselineState(config: NeuroConfig): NeuroState {
+export function baselineState(config: StasisConfig): StasisState {
 	return {
 		stress: config.variables.stress.baseline,
 		confidence: config.variables.confidence.baseline,
@@ -215,12 +215,12 @@ export function baselineState(config: NeuroConfig): NeuroState {
 // Loading
 // ---------------------------------------------------------------------------
 
-export class NeuroConfigError extends Error {
+export class StasisConfigError extends Error {
 	readonly issues: string[];
 
 	constructor(message: string, issues: string[]) {
 		super(issues.length > 0 ? `${message}\n  - ${issues.join("\n  - ")}` : message);
-		this.name = "NeuroConfigError";
+		this.name = "StasisConfigError";
 		this.issues = issues;
 	}
 }
@@ -251,11 +251,11 @@ export function parseConfigSource(text: string, label: string): PlainObject {
 	try {
 		parsed = parseYaml(text);
 	} catch (error) {
-		throw new NeuroConfigError(`Could not parse ${label}`, [String(error)]);
+		throw new StasisConfigError(`Could not parse ${label}`, [String(error)]);
 	}
 	if (parsed === null || parsed === undefined) return {};
 	if (!isPlainObject(parsed)) {
-		throw new NeuroConfigError(`Could not parse ${label}`, ["top level must be a mapping"]);
+		throw new StasisConfigError(`Could not parse ${label}`, ["top level must be a mapping"]);
 	}
 	return parsed;
 }
@@ -273,21 +273,21 @@ function canonicalize(value: unknown): unknown {
 	return value;
 }
 
-export function hashConfig(config: NeuroConfig): string {
+export function hashConfig(config: StasisConfig): string {
 	return createHash("sha256").update(JSON.stringify(canonicalize(config))).digest("hex").slice(0, 16);
 }
 
 /** Merge overlays onto the built-in defaults, validate, and hash. */
 export function buildConfig(overlays: Array<{ label: string; data: unknown }> = []): LoadedConfig {
 	// Clone so callers can never mutate the shared defaults through a returned config.
-	let config = structuredClone(DEFAULT_CONFIG) as NeuroConfig;
+	let config = structuredClone(DEFAULT_CONFIG) as StasisConfig;
 	const sources = ["builtin:default"];
 	for (const overlay of overlays) {
 		config = mergeDeep(config, overlay.data);
 		sources.push(overlay.label);
 	}
 	const issues = validateConfig(config);
-	if (issues.length > 0) throw new NeuroConfigError("Invalid neuro configuration", issues);
+	if (issues.length > 0) throw new StasisConfigError("Invalid stasis configuration", issues);
 	return { config, hash: hashConfig(config), sources };
 }
 
@@ -312,7 +312,7 @@ export function loadConfigFromFiles(paths: string[]): LoadedConfig {
  */
 export const POLICY_SIGN_CONSTRAINTS: ReadonlyArray<{
 	field: PolicyFieldName;
-	variable: NeuroVariable;
+	variable: StasisVariable;
 	sign: "negative" | "positive";
 	rationale: string;
 }> = [
@@ -366,7 +366,7 @@ export const POLICY_SIGN_CONSTRAINTS: ReadonlyArray<{
 	},
 ];
 
-export function validateConfig(config: NeuroConfig): string[] {
+export function validateConfig(config: StasisConfig): string[] {
 	const issues: string[] = [];
 	const finite = (value: unknown, path: string): value is number => {
 		if (typeof value !== "number" || !Number.isFinite(value)) {
@@ -380,7 +380,7 @@ export function validateConfig(config: NeuroConfig): string[] {
 		issues.push("version must be a non-empty string");
 	}
 
-	for (const variable of NEURO_VARIABLES) {
+	for (const variable of STASIS_VARIABLES) {
 		const spec = config.variables?.[variable];
 		const path = `variables.${variable}`;
 		if (!spec) {
@@ -410,7 +410,7 @@ export function validateConfig(config: NeuroConfig): string[] {
 			continue;
 		}
 		for (const [variable, amount] of Object.entries(delta ?? {})) {
-			if (!(NEURO_VARIABLES as readonly string[]).includes(variable)) {
+			if (!(STASIS_VARIABLES as readonly string[]).includes(variable)) {
 				issues.push(`events.${type}.${variable} is not a known variable`);
 				continue;
 			}
@@ -435,8 +435,8 @@ export function validateConfig(config: NeuroConfig): string[] {
 		if (!rule.id) issues.push(`${path} requires an id`);
 		else if (seenRuleIds.has(rule.id)) issues.push(`${path} has a duplicate id`);
 		else seenRuleIds.add(rule.id);
-		if (!(NEURO_VARIABLES as readonly string[]).includes(rule.source)) issues.push(`${path}.source is unknown`);
-		if (!(NEURO_VARIABLES as readonly string[]).includes(rule.target)) issues.push(`${path}.target is unknown`);
+		if (!(STASIS_VARIABLES as readonly string[]).includes(rule.source)) issues.push(`${path}.source is unknown`);
+		if (!(STASIS_VARIABLES as readonly string[]).includes(rule.target)) issues.push(`${path}.target is unknown`);
 		if (rule.direction !== "above" && rule.direction !== "below") {
 			issues.push(`${path}.direction must be "above" or "below"`);
 		}
@@ -471,7 +471,7 @@ export function validateConfig(config: NeuroConfig): string[] {
 		}
 		finite(spec.intercept, `${path}.intercept`);
 		for (const [variable, coefficient] of Object.entries(spec.terms ?? {})) {
-			if (!(NEURO_VARIABLES as readonly string[]).includes(variable)) {
+			if (!(STASIS_VARIABLES as readonly string[]).includes(variable)) {
 				issues.push(`${path}.terms.${variable} is not a known variable`);
 				continue;
 			}
@@ -530,7 +530,7 @@ export function validateConfig(config: NeuroConfig): string[] {
  * These are load-time errors rather than runtime clamps: a study should fail to start
  * rather than quietly run on a physiology that saturates.
  */
-export function validateDynamics(config: NeuroConfig): string[] {
+export function validateDynamics(config: StasisConfig): string[] {
 	const issues: string[] = [];
 	const interactions = config.interactions;
 	if (!interactions?.rules) return issues;
@@ -560,7 +560,7 @@ export function validateDynamics(config: NeuroConfig): string[] {
 	// TICK fires every turn unconditionally, so it is the one event whose steady state
 	// is reached in any long session regardless of what the agent does.
 	for (const [variable, amount] of Object.entries(config.events?.TICK ?? {})) {
-		const spec = config.variables?.[variable as NeuroVariable];
+		const spec = config.variables?.[variable as StasisVariable];
 		if (!spec || typeof amount !== "number" || amount === 0) continue;
 		if (spec.decayRate <= 0) {
 			issues.push(`events.TICK.${variable} accumulates without bound: ${variable} has decayRate 0`);
@@ -584,7 +584,7 @@ export function validateDynamics(config: NeuroConfig): string[] {
 // with zero filesystem access; the YAML file is the editable surface for experiments.
 // ---------------------------------------------------------------------------
 
-export const DEFAULT_CONFIG: NeuroConfig = {
+export const DEFAULT_CONFIG: StasisConfig = {
 	version: "0.1.0",
 	profile: "balanced",
 	variables: {
@@ -780,7 +780,7 @@ export const DEFAULT_CONFIG: NeuroConfig = {
 	runtime: {
 		mode: "active",
 		display: "panel",
-		telemetryDir: ".pi/neuro/telemetry",
+		telemetryDir: ".pi/stasis/telemetry",
 		telemetryEnabled: true,
 		tickOnTurnEnd: true,
 		historyLimit: 200,

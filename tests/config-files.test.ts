@@ -9,8 +9,8 @@ import {
 	loadConfigFromFiles,
 	parseConfigSource,
 	validateConfig,
-} from "../src/neuro/config.ts";
-import { createEngine } from "../src/neuro/engine.ts";
+} from "../src/stasis/config.ts";
+import { createEngine } from "../src/stasis/engine.ts";
 import { createPolicyAdapter } from "../src/policy/adapter.ts";
 
 const CONFIG_DIR = join(import.meta.dirname, "..", "config");

@@ -16,10 +16,10 @@
  * in the working tree would not.
  */
 
-import type { NeuroSnapshot } from "../runtime/neuro-runtime.ts";
+import type { StasisSnapshot } from "../runtime/stasis-runtime.ts";
 
 /** Custom entry type. Namespaced so it cannot collide with another extension's. */
-export const NEURO_STATE_ENTRY = "neuro:state";
+export const STASIS_STATE_ENTRY = "stasis:state";
 
 /**
  * The slice of Pi's session manager this module needs.
@@ -41,7 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /** Validate a restored snapshot rather than trusting whatever is in the session file. */
-export function isNeuroSnapshot(value: unknown): value is NeuroSnapshot {
+export function isStasisSnapshot(value: unknown): value is StasisSnapshot {
 	if (!isRecord(value)) return false;
 	if (value.version !== 1) return false;
 	const state = value.state;
@@ -58,21 +58,21 @@ export function isNeuroSnapshot(value: unknown): value is NeuroSnapshot {
  *
  * Walks the branch rather than the whole file so a fork sees only its own ancestry.
  */
-export function findLatestSnapshot(reader: BranchReader): NeuroSnapshot | undefined {
-	let latest: NeuroSnapshot | undefined;
+export function findLatestSnapshot(reader: BranchReader): StasisSnapshot | undefined {
+	let latest: StasisSnapshot | undefined;
 	for (const entry of reader.getBranch()) {
-		if (entry.type !== "custom" || entry.customType !== NEURO_STATE_ENTRY) continue;
-		if (isNeuroSnapshot(entry.data)) latest = entry.data;
+		if (entry.type !== "custom" || entry.customType !== STASIS_STATE_ENTRY) continue;
+		if (isStasisSnapshot(entry.data)) latest = entry.data;
 	}
 	return latest;
 }
 
-/** Every snapshot on the branch, oldest first — used by `/neuro history`. */
-export function collectSnapshots(reader: BranchReader): NeuroSnapshot[] {
-	const snapshots: NeuroSnapshot[] = [];
+/** Every snapshot on the branch, oldest first — used by `/stasis history`. */
+export function collectSnapshots(reader: BranchReader): StasisSnapshot[] {
+	const snapshots: StasisSnapshot[] = [];
 	for (const entry of reader.getBranch()) {
-		if (entry.type !== "custom" || entry.customType !== NEURO_STATE_ENTRY) continue;
-		if (isNeuroSnapshot(entry.data)) snapshots.push(entry.data);
+		if (entry.type !== "custom" || entry.customType !== STASIS_STATE_ENTRY) continue;
+		if (isStasisSnapshot(entry.data)) snapshots.push(entry.data);
 	}
 	return snapshots;
 }

@@ -17,8 +17,8 @@
  *     `interactions.maxDisplacementPerTarget`, so adding rules cannot compound.
  */
 
-import type { InteractionRule, NeuroConfig } from "./config.ts";
-import { NEURO_VARIABLES, type NeuroState, type NeuroStateDelta, clampMagnitude, quantize } from "./state.ts";
+import type { InteractionRule, StasisConfig } from "./config.ts";
+import { STASIS_VARIABLES, type StasisState, type StasisStateDelta, clampMagnitude, quantize } from "./state.ts";
 
 /**
  * How strongly a rule fires, in [0,1].
@@ -27,7 +27,7 @@ import { NEURO_VARIABLES, type NeuroState, type NeuroStateDelta, clampMagnitude,
  * from 0 at the threshold to 1 at zero. Below the (or above, respectively) threshold
  * the rule is entirely silent — interactions are a regime effect, not a constant tax.
  */
-export function activation(rule: InteractionRule, state: NeuroState): number {
+export function activation(rule: InteractionRule, state: StasisState): number {
 	const value = state[rule.source];
 	if (rule.direction === "above") {
 		if (value <= rule.threshold) return 0;
@@ -41,7 +41,7 @@ export function activation(rule: InteractionRule, state: NeuroState): number {
 
 export interface InteractionContribution {
 	ruleId: string;
-	target: keyof NeuroState;
+	target: keyof StasisState;
 	/** Per-step contribution, already converted from displacement. */
 	amount: number;
 	/** Requested shift of the target's resting point, before the per-target cap. */
@@ -50,17 +50,17 @@ export interface InteractionContribution {
 }
 
 export interface InteractionResult {
-	delta: NeuroStateDelta;
+	delta: StasisStateDelta;
 	contributions: InteractionContribution[];
 	/** Variables whose summed contribution hit `maxTotalPerStep`. */
-	capped: Array<keyof NeuroState>;
+	capped: Array<keyof StasisState>;
 }
 
-export function interactionDelta(state: NeuroState, config: NeuroConfig): InteractionResult {
+export function interactionDelta(state: StasisState, config: StasisConfig): InteractionResult {
 	const contributions: InteractionContribution[] = [];
 	// Accumulate in displacement units so the per-target cap is expressed in the same
 	// terms the rules are written in.
-	const totals: NeuroStateDelta = {};
+	const totals: StasisStateDelta = {};
 
 	for (const rule of config.interactions.rules) {
 		const strength = activation(rule, state);
@@ -73,9 +73,9 @@ export function interactionDelta(state: NeuroState, config: NeuroConfig): Intera
 	}
 
 	const cap = config.interactions.maxDisplacementPerTarget;
-	const delta: NeuroStateDelta = {};
-	const capped: Array<keyof NeuroState> = [];
-	for (const variable of NEURO_VARIABLES) {
+	const delta: StasisStateDelta = {};
+	const capped: Array<keyof StasisState> = [];
+	for (const variable of STASIS_VARIABLES) {
 		const total = totals[variable];
 		if (total === undefined || total === 0) continue;
 		const limited = clampMagnitude(total, cap);

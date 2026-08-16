@@ -12,19 +12,19 @@
  * reshape agent behavior by editing YAML rather than source.
  */
 
-import type { NeuroConfig, PolicyFieldConfig, PolicyFieldName } from "../neuro/config.ts";
-import { NEURO_VARIABLES, type NeuroState, clamp, clamp01, quantize } from "../neuro/state.ts";
+import type { StasisConfig, PolicyFieldConfig, PolicyFieldName } from "../stasis/config.ts";
+import { STASIS_VARIABLES, type StasisState, clamp, clamp01, quantize } from "../stasis/state.ts";
 import { type AgentPolicy, type PolicyRegime, type PolicySnapshot } from "./policy.ts";
 
 export interface PolicyAdapter {
-	derive(state: NeuroState): PolicySnapshot;
-	readonly config: NeuroConfig;
+	derive(state: StasisState): PolicySnapshot;
+	readonly config: StasisConfig;
 }
 
 /** The unit-interval value of a policy field before it is mapped onto its range. */
-export function policyUnit(spec: PolicyFieldConfig, state: NeuroState): number {
+export function policyUnit(spec: PolicyFieldConfig, state: StasisState): number {
 	let sum = spec.intercept;
-	for (const variable of NEURO_VARIABLES) {
+	for (const variable of STASIS_VARIABLES) {
 		const coefficient = spec.terms[variable];
 		if (coefficient === undefined || coefficient === 0) continue;
 		sum += coefficient * state[variable];
@@ -32,14 +32,14 @@ export function policyUnit(spec: PolicyFieldConfig, state: NeuroState): number {
 	return clamp01(sum);
 }
 
-export function policyField(spec: PolicyFieldConfig, state: NeuroState): number {
+export function policyField(spec: PolicyFieldConfig, state: StasisState): number {
 	const unit = policyUnit(spec, state);
 	const value = spec.min + unit * (spec.max - spec.min);
 	const bounded = clamp(value, spec.min, spec.max);
 	return spec.round ? Math.round(bounded) : quantize(bounded);
 }
 
-export function deriveRegime(policy: AgentPolicy, config: NeuroConfig): PolicyRegime {
+export function deriveRegime(policy: AgentPolicy, config: StasisConfig): PolicyRegime {
 	const cautious = policy.verificationLevel >= config.policy.regime.cautiousVerification;
 	const exploratory = policy.explorationLevel >= config.policy.regime.exploratoryExploration;
 	if (cautious && exploratory) return "EXPLORATORY";
@@ -48,7 +48,7 @@ export function deriveRegime(policy: AgentPolicy, config: NeuroConfig): PolicyRe
 	return "CONVERGENT";
 }
 
-export function derivePolicy(state: NeuroState, config: NeuroConfig): PolicySnapshot {
+export function derivePolicy(state: StasisState, config: StasisConfig): PolicySnapshot {
 	const fields = config.policy.fields;
 	const read = (name: PolicyFieldName) => policyField(fields[name], state);
 	const policy: AgentPolicy = {
@@ -66,7 +66,7 @@ export function derivePolicy(state: NeuroState, config: NeuroConfig): PolicySnap
 	return { ...policy, regime: deriveRegime(policy, config) };
 }
 
-export function createPolicyAdapter(config: NeuroConfig): PolicyAdapter {
+export function createPolicyAdapter(config: StasisConfig): PolicyAdapter {
 	return {
 		config,
 		derive: (state) => derivePolicy(state, config),

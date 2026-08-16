@@ -6,8 +6,8 @@
  * divergence has to be declared rather than accumulated by accident.
  */
 
-import type { NeuroMode } from "../src/neuro/config.ts";
-import type { NeuroState } from "../src/neuro/state.ts";
+import type { StasisMode } from "../src/stasis/config.ts";
+import type { StasisState } from "../src/stasis/state.ts";
 
 /**
  * The arms of a study.
@@ -23,14 +23,14 @@ import type { NeuroState } from "../src/neuro/state.ts";
  * constant policy, which separates the effect of the *dynamics* from the effect of the
  * extra text in the prompt.
  */
-export const CONDITIONS = ["bare", "control", "static", "neuro"] as const;
+export const CONDITIONS = ["bare", "control", "static", "stasis"] as const;
 export type Condition = (typeof CONDITIONS)[number];
 
-export const CONDITION_MODES: Record<Condition, NeuroMode | "none"> = {
+export const CONDITION_MODES: Record<Condition, StasisMode | "none"> = {
 	bare: "none",
 	control: "observer",
 	static: "static",
-	neuro: "active",
+	stasis: "active",
 };
 
 export interface BenchmarkModel {
@@ -62,7 +62,7 @@ export interface Benchmark {
 	model: BenchmarkModel;
 	conditions: Condition[];
 	tasks: BenchmarkTask[];
-	/** Physiological profile for the neuro arm. */
+	/** Physiological profile for the stasis arm. */
 	profile?: string;
 	/** Held identical across every condition, so no arm gets extra instruction. */
 	systemPrompt?: string;
@@ -157,7 +157,7 @@ export interface TrialMetrics {
 	minPersistence: number;
 	meanFatigue: number;
 	peakFatigue: number;
-	finalState?: NeuroState;
+	finalState?: StasisState;
 	/** Fraction of transitions spent in each policy regime. */
 	regimeShare: Record<string, number>;
 
@@ -182,7 +182,7 @@ export interface TrialRepro {
 	gitCommit?: string;
 	configHash?: string;
 	profile?: string;
-	mode: NeuroMode | "none";
+	mode: StasisMode | "none";
 	model: BenchmarkModel;
 	startedAt: string;
 	nodeVersion: string;

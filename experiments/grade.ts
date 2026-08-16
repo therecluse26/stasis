@@ -56,8 +56,8 @@ export function prepareWorkspace(fixture: FixtureDefinition, destination: string
 	// A git repo gives a precise diff of what the agent changed, and lets grading apply
 	// exactly that to a clean tree.
 	execFileSync("git", ["init", "-q"], { cwd: destination });
-	execFileSync("git", ["config", "user.email", "harness@pi-neuro.local"], { cwd: destination });
-	execFileSync("git", ["config", "user.name", "pi-neuro harness"], { cwd: destination });
+	execFileSync("git", ["config", "user.email", "harness@stasis.local"], { cwd: destination });
+	execFileSync("git", ["config", "user.name", "stasis harness"], { cwd: destination });
 	execFileSync("git", ["add", "-A"], { cwd: destination });
 	execFileSync("git", ["commit", "-q", "-m", "fixture"], { cwd: destination });
 }

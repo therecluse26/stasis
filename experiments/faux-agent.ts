@@ -1,7 +1,7 @@
 /**
  * A scripted agent, for validating the harness without spending money.
  *
- * Enabled with `PI_NEURO_FAUX=1`. Pi's faux provider replaces the model with a fixed
+ * Enabled with `PI_STASIS_FAUX=1`. Pi's faux provider replaces the model with a fixed
  * sequence of turns, so a study can be run end to end — workspace preparation, extension
  * activation, tool execution, telemetry, grading, aggregation, report — with no
  * credentials and no network.
@@ -64,5 +64,5 @@ export function createFauxAgent(taskId: string): FauxAgentPlan {
 }
 
 export function fauxEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-	return env.PI_NEURO_FAUX === "1";
+	return env.PI_STASIS_FAUX === "1";
 }

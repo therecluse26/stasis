@@ -20,15 +20,15 @@
  */
 
 import type { AgentEventType, AppraisedEvent } from "../appraisal/events.ts";
-import type { NeuroConfig } from "./config.ts";
+import type { StasisConfig } from "./config.ts";
 import { baselineState } from "./config.ts";
 import { homeostasisDelta } from "./homeostasis.ts";
 import { type InteractionContribution, interactionDelta } from "./interactions.ts";
 import {
-	NEURO_VARIABLES,
-	type NeuroState,
-	type NeuroStateDelta,
-	type NeuroVariable,
+	STASIS_VARIABLES,
+	type StasisState,
+	type StasisStateDelta,
+	type StasisVariable,
 	clamp,
 	clampMagnitude,
 	cloneState,
@@ -40,20 +40,20 @@ export type TransitionReasonKind = "event" | "modulator" | "interaction" | "home
 
 export interface TransitionReason {
 	kind: TransitionReasonKind;
-	variable: NeuroVariable;
+	variable: StasisVariable;
 	amount: number;
 	detail: string;
 }
 
-export interface NeuroTransition {
+export interface StasisTransition {
 	step: number;
 	event: AppraisedEvent;
-	before: NeuroState;
+	before: StasisState;
 	/** Event and modulator contribution, after per-variable clamping. */
-	delta: NeuroStateDelta;
-	interactions: NeuroStateDelta;
-	homeostasis: NeuroStateDelta;
-	after: NeuroState;
+	delta: StasisStateDelta;
+	interactions: StasisStateDelta;
+	homeostasis: StasisStateDelta;
+	after: StasisState;
 	reasons: TransitionReason[];
 	/** True when the engine was in a mode that suppresses state change. */
 	suppressed: boolean;
@@ -69,9 +69,9 @@ export interface TransitionContext {
 }
 
 export interface NeuromodulatorEngine {
-	transition(current: NeuroState, event: AppraisedEvent, context: TransitionContext): NeuroTransition;
-	baseline(): NeuroState;
-	readonly config: NeuroConfig;
+	transition(current: StasisState, event: AppraisedEvent, context: TransitionContext): StasisTransition;
+	baseline(): StasisState;
+	readonly config: StasisConfig;
 }
 
 /**
@@ -80,7 +80,7 @@ export interface NeuromodulatorEngine {
  * Severity 0.5 is nominal and always yields exactly 1.0, so the numbers written in
  * YAML are the magnitudes actually observed for a typical event of that type.
  */
-export function severityScale(severity: number, config: NeuroConfig): number {
+export function severityScale(severity: number, config: StasisConfig): number {
 	if (!config.severity.enabled) return 1;
 	const { minScale, maxScale } = config.severity;
 	const s = clamp(severity, 0, 1);
@@ -89,14 +89,14 @@ export function severityScale(severity: number, config: NeuroConfig): number {
 }
 
 function applyModulator(
-	target: NeuroStateDelta,
-	source: NeuroStateDelta,
+	target: StasisStateDelta,
+	source: StasisStateDelta,
 	weight: number,
 	label: string,
 	reasons: TransitionReason[],
 ): void {
 	if (weight <= 0) return;
-	for (const variable of NEURO_VARIABLES) {
+	for (const variable of STASIS_VARIABLES) {
 		const configured = source[variable];
 		if (configured === undefined || configured === 0) continue;
 		const amount = quantize(configured * weight);
@@ -106,7 +106,7 @@ function applyModulator(
 	}
 }
 
-export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
+export function createEngine(config: StasisConfig): NeuromodulatorEngine {
 	return {
 		config,
 		baseline: () => baselineState(config),
@@ -115,10 +115,10 @@ export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
 			const reasons: TransitionReason[] = [];
 
 			// 1. Configured event delta, scaled by severity.
-			const raw: NeuroStateDelta = {};
+			const raw: StasisStateDelta = {};
 			const configured = config.events[event.type] ?? {};
 			const scale = severityScale(event.severity, config);
-			for (const variable of NEURO_VARIABLES) {
+			for (const variable of STASIS_VARIABLES) {
 				const base = configured[variable];
 				if (base === undefined || base === 0) continue;
 				const amount = quantize(base * scale);
@@ -137,8 +137,8 @@ export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
 			applyModulator(raw, config.modulators.novelty, event.novelty, "novelty", reasons);
 
 			// 3. Per-variable cap on a single event's influence.
-			const delta: NeuroStateDelta = {};
-			for (const variable of NEURO_VARIABLES) {
+			const delta: StasisStateDelta = {};
+			for (const variable of STASIS_VARIABLES) {
 				const value = raw[variable];
 				if (value === undefined || value === 0) continue;
 				const limit = config.variables[variable].maxDeltaPerEvent;
@@ -174,7 +174,7 @@ export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
 			}
 
 			const homeostasis = homeostasisDelta(before, config);
-			for (const variable of NEURO_VARIABLES) {
+			for (const variable of STASIS_VARIABLES) {
 				const amount = homeostasis[variable];
 				if (amount === undefined || amount === 0) continue;
 				reasons.push({
@@ -187,7 +187,7 @@ export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
 
 			// 6. Combine, bound, quantize.
 			const after = cloneState(before);
-			for (const variable of NEURO_VARIABLES) {
+			for (const variable of STASIS_VARIABLES) {
 				const spec = config.variables[variable];
 				const sum =
 					before[variable] +
@@ -230,12 +230,12 @@ export function createEngine(config: NeuroConfig): NeuromodulatorEngine {
  */
 export function replay(
 	engine: NeuromodulatorEngine,
-	initial: NeuroState,
+	initial: StasisState,
 	events: AppraisedEvent[],
-): { states: NeuroState[]; transitions: NeuroTransition[] } {
+): { states: StasisState[]; transitions: StasisTransition[] } {
 	let state = cloneState(initial);
-	const states: NeuroState[] = [cloneState(state)];
-	const transitions: NeuroTransition[] = [];
+	const states: StasisState[] = [cloneState(state)];
+	const transitions: StasisTransition[] = [];
 	events.forEach((event, index) => {
 		const transition = engine.transition(state, event, { step: index + 1 });
 		state = transition.after;
@@ -247,9 +247,9 @@ export function replay(
 
 /** Net configured effect of an event type on a variable, ignoring severity scaling. */
 export function configuredEffect(
-	config: NeuroConfig,
+	config: StasisConfig,
 	type: AgentEventType,
-	variable: NeuroVariable,
+	variable: StasisVariable,
 ): number | undefined {
 	return config.events[type]?.[variable];
 }

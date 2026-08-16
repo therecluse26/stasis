@@ -17,14 +17,14 @@ import { captureDiff, grade, prepareWorkspace } from "../experiments/grade.ts";
 import { computeMetrics } from "../experiments/metrics.ts";
 import { summarize } from "../experiments/analysis.ts";
 import type { TrialResult } from "../experiments/types.ts";
-import type { NeuroTelemetryRecord } from "../src/telemetry/schema.ts";
+import type { StasisTelemetryRecord } from "../src/telemetry/schema.ts";
 
 const FIXTURES = join(import.meta.dirname, "..", "experiments", "fixtures");
 
 let scratch: string;
 
 beforeEach(() => {
-	scratch = mkdtempSync(join(tmpdir(), "neuro-exp-"));
+	scratch = mkdtempSync(join(tmpdir(), "stasis-exp-"));
 });
 
 afterEach(() => {
@@ -204,7 +204,7 @@ describe("benchmark loading", () => {
 		const { benchmark, fixtures } = loadBenchmark(benchmarkPath);
 		expect(benchmark.name).toBe("repeated-failure-study");
 		expect(benchmark.conditions).toContain("control");
-		expect(benchmark.conditions).toContain("neuro");
+		expect(benchmark.conditions).toContain("stasis");
 		expect(fixtures.size).toBe(3);
 		// Nothing about the provider is hard-coded anywhere but the study file.
 		expect(benchmark.model.provider).toBe("openrouter");
@@ -219,7 +219,7 @@ describe("benchmark loading", () => {
 		const path = join(scratch, "bad.yaml");
 		writeFileSync(
 			path,
-			"name: x\nmodel: { provider: openrouter, model: m }\nconditions: [neuro]\ntasks: [{ fixture: ./nope }]\n",
+			"name: x\nmodel: { provider: openrouter, model: m }\nconditions: [stasis]\ntasks: [{ fixture: ./nope }]\n",
 			"utf8",
 		);
 		expect(() => loadBenchmark(path)).toThrow(/at least two conditions/);
@@ -243,7 +243,7 @@ describe("metrics", () => {
 		state: Record<string, number>,
 		evidence: Record<string, unknown> = {},
 		turnIndex = 1,
-	): NeuroTelemetryRecord =>
+	): StasisTelemetryRecord =>
 		({
 			schema: 1,
 			type: "transition",
@@ -259,7 +259,7 @@ describe("metrics", () => {
 			policy: { regime: "CONVERGENT", maxPatchLines: 200 },
 			reasons: [],
 			suppressed: false,
-		}) as unknown as NeuroTelemetryRecord;
+		}) as unknown as StasisTelemetryRecord;
 
 	it("counts activity from the records the extension writes", () => {
 		const metrics = computeMetrics([
@@ -357,22 +357,22 @@ describe("analysis", () => {
 		const summary = summarize([
 			trial("control", true),
 			trial("control", false),
-			trial("neuro", true),
-			trial("neuro", true),
+			trial("stasis", true),
+			trial("stasis", true),
 		]);
 		const control = summary.byCondition.find((entry) => entry.condition === "control")!;
-		const neuro = summary.byCondition.find((entry) => entry.condition === "neuro")!;
+		const stasis = summary.byCondition.find((entry) => entry.condition === "stasis")!;
 		expect(control.successRate).toBe(0.5);
-		expect(neuro.successRate).toBe(1);
+		expect(stasis.successRate).toBe(1);
 	});
 
 	it("distinguishes patching around the cause from failing outright", () => {
-		const summary = summarize([trial("neuro", false, { visiblePassed: true })]);
+		const summary = summarize([trial("stasis", false, { visiblePassed: true })]);
 		expect(summary.byCondition[0]!.visibleOnly).toBe(1);
 	});
 
 	it("reports spread alongside every mean", () => {
-		const summary = summarize([trial("neuro", true, { turns: 2 }), trial("neuro", true, { turns: 20 })]);
+		const summary = summarize([trial("stasis", true, { turns: 2 }), trial("stasis", true, { turns: 20 })]);
 		expect(summary.byCondition[0]!.stdev.turns).toBeGreaterThan(0);
 	});
 });

@@ -1,7 +1,7 @@
 /**
- * The Pi extension: a thin adapter over `NeuroRuntime`.
+ * The Pi extension: a thin adapter over `StasisRuntime`.
  *
- * Everything interesting lives behind `src/runtime/neuro-runtime.ts`, which knows
+ * Everything interesting lives behind `src/runtime/stasis-runtime.ts`, which knows
  * nothing about Pi. This file only translates — Pi events in, runtime calls out, runtime
  * decisions back into Pi's return shapes. Keeping it thin is what lets the causal chain
  * be tested without a harness, a model or a network.
@@ -28,20 +28,20 @@ import type {
 	ToolResultEvent,
 } from "@earendil-works/pi-coding-agent";
 import { editChangedLines } from "./appraisal/appraiser.ts";
-import type { NeuroConfig } from "./neuro/config.ts";
-import { NEURO_VARIABLES, type NeuroState } from "./neuro/state.ts";
-import { NEURO_STATE_ENTRY, findLatestSnapshot } from "./persistence/neuro-state-store.ts";
+import type { StasisConfig } from "./stasis/config.ts";
+import { STASIS_VARIABLES, type StasisState } from "./stasis/state.ts";
+import { STASIS_STATE_ENTRY, findLatestSnapshot } from "./persistence/stasis-state-store.ts";
 import { POLICY_FIELDS } from "./policy/policy.ts";
-import { NeuroRuntime } from "./runtime/neuro-runtime.ts";
+import { StasisRuntime } from "./runtime/stasis-runtime.ts";
 import { type ResolveOptions, resolveConfig } from "./runtime/config-loader.ts";
 import { createRecorder } from "./telemetry/recorder.ts";
-import { renderPanel, renderPolicyChange, renderStatus } from "./ui/neuro-status.ts";
+import { renderPanel, renderPolicyChange, renderStatus } from "./ui/stasis-status.ts";
 import { EXTENSION_VERSION } from "./version.ts";
 
 const PACKAGE_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "..");
-const WIDGET_KEY = "neuro";
+const WIDGET_KEY = "stasis";
 
-export interface NeuroExtensionOptions extends Partial<Omit<ResolveOptions, "cwd" | "packageRoot">> {
+export interface StasisExtensionOptions extends Partial<Omit<ResolveOptions, "cwd" | "packageRoot">> {
 	/** Identifies the arm of an experiment; recorded in the telemetry run header. */
 	condition?: string;
 	trial?: number;
@@ -99,10 +99,10 @@ function formatValue(value: number): string {
  * in-memory extension with an explicit configuration, which is how a trial's condition is
  * selected without touching the filesystem.
  */
-export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
-	return function neuroExtension(pi: ExtensionAPI): void {
-		let runtime: NeuroRuntime | undefined;
-		let previousState: NeuroState | undefined;
+export function createStasisExtension(options: StasisExtensionOptions = {}) {
+	return function stasisExtension(pi: ExtensionAPI): void {
+		let runtime: StasisRuntime | undefined;
+		let previousState: StasisState | undefined;
 		let startupWarnings: string[] = [];
 		let lastPolicyNotice: string | undefined;
 
@@ -119,7 +119,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				try {
 					runtime?.fault(error as Error);
 					// eslint-disable-next-line no-console
-					console.error(`[neuro] disabled after error in ${label}:`, error);
+					console.error(`[stasis] disabled after error in ${label}:`, error);
 				} catch {
 					// Nothing further to do; never rethrow out of a Pi handler.
 				}
@@ -134,7 +134,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				try {
 					runtime?.fault(error as Error);
 					// eslint-disable-next-line no-console
-					console.error(`[neuro] disabled after error in ${label}:`, error);
+					console.error(`[stasis] disabled after error in ${label}:`, error);
 				} catch {
 					// swallow
 				}
@@ -142,7 +142,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 			}
 		}
 
-		function config(): NeuroConfig | undefined {
+		function config(): StasisConfig | undefined {
 			return runtime?.loaded.config;
 		}
 
@@ -171,7 +171,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 
 		function persist(): void {
 			if (!runtime) return;
-			pi.appendEntry(NEURO_STATE_ENTRY, runtime.snapshot());
+			pi.appendEntry(STASIS_STATE_ENTRY, runtime.snapshot());
 		}
 
 		// -------------------------------------------------------------------
@@ -193,7 +193,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 
 				const runtimeConfig = resolution.loaded.config.runtime;
 				const sessionId = ctx.sessionManager.getSessionId() ?? "ephemeral";
-				runtime = new NeuroRuntime({
+				runtime = new StasisRuntime({
 					loaded: resolution.loaded,
 					sessionId,
 					cwd: ctx.cwd,
@@ -226,7 +226,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				refreshDisplay(ctx);
 
 				if (ctx.hasUI && startupWarnings.length > 0) {
-					ctx.ui.notify(`neuro: ${startupWarnings.join("; ")}`, "warning");
+					ctx.ui.notify(`stasis: ${startupWarnings.join("; ")}`, "warning");
 				}
 			});
 		});
@@ -317,10 +317,10 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				if (!decision.block) return undefined;
 
 				if (ctx.hasUI && ctx.mode === "tui") {
-					ctx.ui.notify(`neuro: blocked ${event.toolName} (${decision.rule})`, "warning");
+					ctx.ui.notify(`stasis: blocked ${event.toolName} (${decision.rule})`, "warning");
 				}
 				refreshDisplay(ctx);
-				return { block: true, reason: decision.reason ?? "Blocked by neuro policy" };
+				return { block: true, reason: decision.reason ?? "Blocked by stasis policy" };
 			});
 		});
 
@@ -362,7 +362,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				persist();
 				refreshDisplay(ctx);
 				if (lastPolicyNotice && ctx.hasUI && ctx.mode === "tui") {
-					ctx.ui.notify(`neuro: ${lastPolicyNotice}`, "info");
+					ctx.ui.notify(`stasis: ${lastPolicyNotice}`, "info");
 					lastPolicyNotice = undefined;
 				}
 				previousState = runtime.state;
@@ -375,7 +375,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 
 		const SUBCOMMANDS = ["status", "history", "reset", "enable", "disable", "config", "debug", "export"];
 
-		pi.registerCommand("neuro", {
+		pi.registerCommand("stasis", {
 			description: "Inspect and control the synthetic physiology",
 			getArgumentCompletions: (prefix) => {
 				const matches = SUBCOMMANDS.filter((name) => name.startsWith(prefix.trim()));
@@ -392,7 +392,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 		async function handleCommand(sub: string, rest: string[], ctx: ExtensionCommandContext): Promise<void> {
 			const active = runtime;
 			if (!active) {
-				ctx.ui.notify("neuro: not initialized yet", "warning");
+				ctx.ui.notify("stasis: not initialized yet", "warning");
 				return;
 			}
 
@@ -401,9 +401,9 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 					const state = active.state;
 					const policy = active.policy;
 					const lines = [
-						`neuro ${active.enabled ? active.mode : "disabled"}  profile ${active.loaded.config.profile}  config ${active.loaded.hash}`,
+						`stasis ${active.enabled ? active.mode : "disabled"}  profile ${active.loaded.config.profile}  config ${active.loaded.hash}`,
 						"",
-						...NEURO_VARIABLES.map((variable) => `  ${variable.padEnd(13)}${state[variable].toFixed(3)}`),
+						...STASIS_VARIABLES.map((variable) => `  ${variable.padEnd(13)}${state[variable].toFixed(3)}`),
 						"",
 						`  policy       ${policy.regime}`,
 						...POLICY_FIELDS.map((field) => `  ${field.padEnd(28)}${formatValue(policy[field])}`),
@@ -419,11 +419,11 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 					const limit = Number(rest[0]) || 15;
 					const history = active.history(limit);
 					if (history.length === 0) {
-						ctx.ui.notify("neuro: no transitions yet", "info");
+						ctx.ui.notify("stasis: no transitions yet", "info");
 						return;
 					}
 					const lines = history.map((record) => {
-						const moved = NEURO_VARIABLES.filter(
+						const moved = STASIS_VARIABLES.filter(
 							(variable) => record.stateBefore[variable] !== record.stateAfter[variable],
 						)
 							.map((variable) => `${variable.slice(0, 4)} ${record.stateAfter[variable].toFixed(2)}`)
@@ -439,7 +439,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 					persist();
 					previousState = active.state;
 					refreshDisplay(ctx);
-					ctx.ui.notify("neuro: state reset to configured baselines", "info");
+					ctx.ui.notify("stasis: state reset to configured baselines", "info");
 					return;
 				}
 
@@ -448,7 +448,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 					active.setEnabled(sub === "enable");
 					persist();
 					refreshDisplay(ctx);
-					ctx.ui.notify(`neuro: ${sub}d`, "info");
+					ctx.ui.notify(`stasis: ${sub}d`, "info");
 					return;
 				}
 
@@ -459,7 +459,7 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 						`sources: ${active.loaded.sources.join(" -> ")}`,
 						"",
 						"variables (baseline / decay / maxDelta)",
-						...NEURO_VARIABLES.map((variable) => {
+						...STASIS_VARIABLES.map((variable) => {
 							const spec = cfg.variables[variable];
 							return `  ${variable.padEnd(13)}${spec.baseline.toFixed(2)}  ${spec.decayRate.toFixed(3)}  ${spec.maxDeltaPerEvent.toFixed(2)}`;
 						}),
@@ -499,22 +499,22 @@ export function createNeuroExtension(options: NeuroExtensionOptions = {}) {
 				case "export": {
 					const path = active.recorder.path;
 					ctx.ui.notify(
-						path ? `neuro: telemetry at ${path}` : "neuro: telemetry disabled; nothing written to disk",
+						path ? `stasis: telemetry at ${path}` : "stasis: telemetry disabled; nothing written to disk",
 						"info",
 					);
 					return;
 				}
 
 				default:
-					ctx.ui.notify(`neuro: unknown subcommand "${sub}". Try: ${SUBCOMMANDS.join(", ")}`, "warning");
+					ctx.ui.notify(`stasis: unknown subcommand "${sub}". Try: ${SUBCOMMANDS.join(", ")}`, "warning");
 			}
 		}
 	};
 }
 
 /** Default export: what Pi loads from `.pi/extensions` or `-e`. */
-export default function neuro(pi: ExtensionAPI): void {
-	createNeuroExtension()(pi);
+export default function stasis(pi: ExtensionAPI): void {
+	createStasisExtension()(pi);
 }
 
 export { EXTENSION_VERSION };

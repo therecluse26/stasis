@@ -13,9 +13,9 @@
  */
 
 import type { AppraisedEvent } from "../appraisal/events.ts";
-import type { NeuroConfig, NeuroMode } from "../neuro/config.ts";
-import type { TransitionReason } from "../neuro/engine.ts";
-import type { NeuroState, NeuroStateDelta } from "../neuro/state.ts";
+import type { StasisConfig, StasisMode } from "../stasis/config.ts";
+import type { TransitionReason } from "../stasis/engine.ts";
+import type { StasisState, StasisStateDelta } from "../stasis/state.ts";
 import type { EnforcementRule } from "../policy/enforcement.ts";
 import type { AgentPolicy, PolicySnapshot } from "../policy/policy.ts";
 
@@ -39,12 +39,12 @@ export interface RunHeaderRecord extends RecordBase {
 	extensionVersion: string;
 	piVersion?: string;
 	gitCommit?: string;
-	mode: NeuroMode;
+	mode: StasisMode;
 	profile: string;
 	configHash: string;
 	configSources: string[];
-	config: NeuroConfig;
-	initialState: NeuroState;
+	config: StasisConfig;
+	initialState: StasisState;
 	initialPolicy: PolicySnapshot;
 	model?: { provider?: string; id?: string; thinkingLevel?: string };
 	cwd?: string;
@@ -65,11 +65,11 @@ export interface TransitionRecord extends RecordBase {
 		repeated: boolean;
 		evidence: AppraisedEvent["evidence"];
 	};
-	stateBefore: NeuroState;
-	eventDelta: NeuroStateDelta;
-	interactionDelta: NeuroStateDelta;
-	homeostasisDelta: NeuroStateDelta;
-	stateAfter: NeuroState;
+	stateBefore: StasisState;
+	eventDelta: StasisStateDelta;
+	interactionDelta: StasisStateDelta;
+	homeostasisDelta: StasisStateDelta;
+	stateAfter: StasisState;
 	policy: PolicySnapshot;
 	reasons: TransitionReason[];
 	/** True in observer mode: the transition was computed but not applied. */
@@ -128,7 +128,7 @@ export interface LifecycleRecord extends RecordBase {
 	phase: "session_start" | "session_resume" | "session_shutdown" | "reset" | "enabled" | "disabled" | "error";
 	reason?: string;
 	restored?: boolean;
-	state?: NeuroState;
+	state?: StasisState;
 }
 
 /**
@@ -143,7 +143,7 @@ export interface IntegrityRecord extends RecordBase {
 	detail: string;
 }
 
-export type NeuroTelemetryRecord =
+export type StasisTelemetryRecord =
 	| RunHeaderRecord
 	| TransitionRecord
 	| PolicyChangeRecord
@@ -153,22 +153,22 @@ export type NeuroTelemetryRecord =
 	| LifecycleRecord
 	| IntegrityRecord;
 
-export function isTransitionRecord(record: NeuroTelemetryRecord): record is TransitionRecord {
+export function isTransitionRecord(record: StasisTelemetryRecord): record is TransitionRecord {
 	return record.type === "transition";
 }
 
-export function isEnforcementRecord(record: NeuroTelemetryRecord): record is EnforcementRecord {
+export function isEnforcementRecord(record: StasisTelemetryRecord): record is EnforcementRecord {
 	return record.type === "enforcement";
 }
 
 /** Parse a telemetry file, skipping malformed lines rather than failing the analysis. */
-export function parseTelemetry(contents: string): NeuroTelemetryRecord[] {
-	const records: NeuroTelemetryRecord[] = [];
+export function parseTelemetry(contents: string): StasisTelemetryRecord[] {
+	const records: StasisTelemetryRecord[] = [];
 	for (const line of contents.split("\n")) {
 		const trimmed = line.trim();
 		if (trimmed.length === 0) continue;
 		try {
-			records.push(JSON.parse(trimmed) as NeuroTelemetryRecord);
+			records.push(JSON.parse(trimmed) as StasisTelemetryRecord);
 		} catch {
 			// A truncated final line is expected if a run was killed mid-write.
 		}

@@ -1,7 +1,7 @@
-# pi-neuro default physiology.
+# Stasis default physiology.
 #
 # This file is the editable surface for experimentation. It mirrors DEFAULT_CONFIG in
-# src/neuro/config.ts, which exists so the engine is usable with zero filesystem access.
+# src/stasis/config.ts, which exists so the engine is usable with zero filesystem access.
 # Overlays are merged deeply onto the defaults, so a profile only needs to state what it
 # changes. Arrays replace wholesale rather than concatenating.
 #
@@ -379,7 +379,7 @@ appraisal:
 runtime:
   mode: active
   display: panel
-  telemetryDir: .pi/neuro/telemetry
+  telemetryDir: .pi/stasis/telemetry
   telemetryEnabled: true
   tickOnTurnEnd: true
   historyLimit: 200

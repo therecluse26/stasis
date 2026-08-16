@@ -12,12 +12,12 @@
  * quiet stretches is supplied by the TICK event emitted at the end of each turn.
  */
 
-import type { NeuroConfig } from "./config.ts";
-import { NEURO_VARIABLES, type NeuroState, type NeuroStateDelta, quantize } from "./state.ts";
+import type { StasisConfig } from "./config.ts";
+import { STASIS_VARIABLES, type StasisState, type StasisStateDelta, quantize } from "./state.ts";
 
-export function homeostasisDelta(state: NeuroState, config: NeuroConfig): NeuroStateDelta {
-	const delta: NeuroStateDelta = {};
-	for (const variable of NEURO_VARIABLES) {
+export function homeostasisDelta(state: StasisState, config: StasisConfig): StasisStateDelta {
+	const delta: StasisStateDelta = {};
+	for (const variable of STASIS_VARIABLES) {
 		const spec = config.variables[variable];
 		const pull = spec.decayRate * (spec.baseline - state[variable]);
 		const quantized = quantize(pull);
@@ -34,7 +34,7 @@ export function homeostasisDelta(state: NeuroState, config: NeuroConfig): NeuroS
  * tests can assert convergence targets rather than hard-coding numbers, and so
  * configuration can be checked for events whose steady state would peg a variable.
  */
-export function steadyState(variable: keyof NeuroState, perEvent: number, config: NeuroConfig): number {
+export function steadyState(variable: keyof StasisState, perEvent: number, config: StasisConfig): number {
 	const spec = config.variables[variable];
 	if (spec.decayRate === 0) return perEvent > 0 ? spec.max : perEvent < 0 ? spec.min : spec.baseline;
 	const target = spec.baseline + perEvent / spec.decayRate;

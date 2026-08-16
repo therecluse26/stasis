@@ -16,7 +16,7 @@
  * gate rather than an occasional manual check.
  */
 
-import type { BranchEntry } from "../../src/persistence/neuro-state-store.ts";
+import type { BranchEntry } from "../../src/persistence/stasis-state-store.ts";
 
 export interface FakeToolResult {
 	toolName: string;
@@ -70,7 +70,7 @@ export class FakePi {
 			this.commands.set(name, options);
 		},
 		registerTool: () => {
-			throw new Error("the neuro extension must not register tools: the model could then reach its own physiology");
+			throw new Error("the stasis extension must not register tools: the model could then reach its own physiology");
 		},
 		appendEntry: (customType: string, data?: unknown) => {
 			this.entries.push({ type: "custom", customType, data });

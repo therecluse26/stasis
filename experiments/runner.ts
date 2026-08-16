@@ -2,7 +2,7 @@
  * Study runner.
  *
  *     npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml
- *     npm run experiment -- <benchmark> --trials 3 --conditions control,neuro --task bug-001-repeat-trap
+ *     npm run experiment -- <benchmark> --trials 3 --conditions control,stasis --task bug-001-repeat-trap
  *     npm run experiment -- <benchmark> --dry-run
  *
  * Trials are interleaved across conditions rather than run in blocks, so that drift in

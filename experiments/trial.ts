@@ -21,7 +21,7 @@ import {
 	createAgentSession,
 	resolveCliModel,
 } from "@earendil-works/pi-coding-agent";
-import { createNeuroExtension } from "../src/extension.ts";
+import { createStasisExtension } from "../src/extension.ts";
 import { EXTENSION_VERSION } from "../src/version.ts";
 import { createFauxAgent, fauxEnabled } from "./faux-agent.ts";
 import { grade, prepareWorkspace } from "./grade.ts";
@@ -55,7 +55,7 @@ async function main(): Promise<void> {
 
 	const workdir = join(request.outputDir, "workspace");
 	const gradingDir = join(request.outputDir, "grading");
-	const telemetryPath = join(request.outputDir, "neuro.jsonl");
+	const telemetryPath = join(request.outputDir, "stasis.jsonl");
 	mkdirSync(request.outputDir, { recursive: true });
 
 	const mode = CONDITION_MODES[request.condition];
@@ -145,8 +145,8 @@ async function main(): Promise<void> {
 					? []
 					: [
 							{
-								name: `neuro-${request.condition}`,
-								factory: createNeuroExtension({
+								name: `stasis-${request.condition}`,
+								factory: createStasisExtension({
 									mode,
 									profile: request.profile,
 									telemetryDir: telemetryPath,

@@ -10,9 +10,9 @@
 
 import { join } from "node:path";
 import { type AppraisedEvent, appraisedEvent } from "../src/appraisal/events.ts";
-import { type NeuroConfig, baselineState, buildConfig, loadConfigFromFiles } from "../src/neuro/config.ts";
-import { createEngine, replay } from "../src/neuro/engine.ts";
-import { NEURO_VARIABLES, type NeuroState } from "../src/neuro/state.ts";
+import { type StasisConfig, baselineState, buildConfig, loadConfigFromFiles } from "../src/stasis/config.ts";
+import { createEngine, replay } from "../src/stasis/engine.ts";
+import { STASIS_VARIABLES, type StasisState } from "../src/stasis/state.ts";
 import { createPolicyAdapter } from "../src/policy/adapter.ts";
 import { type PolicySnapshot, policyDiff } from "../src/policy/policy.ts";
 
@@ -57,7 +57,7 @@ function arrow(before: number, after: number): string {
 	return " ";
 }
 
-function loadProfile(name: string | undefined): NeuroConfig {
+function loadProfile(name: string | undefined): StasisConfig {
 	const files = [join(CONFIG_DIR, "default.yaml")];
 	if (name) files.push(join(CONFIG_DIR, "profiles", `${name}.yaml`));
 	try {
@@ -69,8 +69,8 @@ function loadProfile(name: string | undefined): NeuroConfig {
 	}
 }
 
-function printState(step: number, label: string, before: NeuroState, after: NeuroState): void {
-	const cells = NEURO_VARIABLES.map(
+function printState(step: number, label: string, before: StasisState, after: StasisState): void {
+	const cells = STASIS_VARIABLES.map(
 		(variable) =>
 			`${variable.slice(0, 4)} ${bar(after[variable])} ${after[variable].toFixed(2)}${arrow(before[variable], after[variable])}`,
 	);
@@ -96,7 +96,7 @@ function main(): void {
 	const adapter = createPolicyAdapter(config);
 	const start = baselineState(config);
 
-	console.log(`\npi-neuro — deterministic physiology replay (profile: ${config.profile})\n`);
+	console.log(`\nStasis — deterministic physiology replay (profile: ${config.profile})\n`);
 
 	const first = replay(engine, start, SEQUENCE);
 	const second = replay(engine, start, SEQUENCE);

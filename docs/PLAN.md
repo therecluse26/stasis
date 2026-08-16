@@ -1,4 +1,4 @@
-# Project plan — pi-neuro
+# Project plan — Stasis
 
 Status as of 2026-08-16. This is the resumption document: what is built, what is not, and
 what a future session needs to know before touching anything.
@@ -24,7 +24,7 @@ npm run typecheck
 npm run demo:sequence        # deterministic replay, printed twice, asserted identical
 
 # Exercise the whole study pipeline with a scripted agent — free, no network
-PI_NEURO_FAUX=1 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 1
+PI_STASIS_FAUX=1 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 1
 ```
 
 The first real task is almost certainly **[G1](#g1-strategy_change-never-fires)** below,
@@ -38,11 +38,11 @@ then a live smoke run.
 
 Deterministic engine with no Pi dependency.
 
-- [x] `NeuroState`, five variables in `[0,1]` — `src/neuro/state.ts`
-- [x] `NeuroConfig` schema, loading, deep-merge overlays, content hashing — `src/neuro/config.ts`
-- [x] `NeuromodulatorEngine.transition()` with fixed six-step order — `src/neuro/engine.ts`
-- [x] Homeostatic restoring force, event-driven rather than wall-clock — `src/neuro/homeostasis.ts`
-- [x] Cross-variable interactions, order-independent — `src/neuro/interactions.ts`
+- [x] `StasisState`, five variables in `[0,1]` — `src/stasis/state.ts`
+- [x] `StasisConfig` schema, loading, deep-merge overlays, content hashing — `src/stasis/config.ts`
+- [x] `NeuromodulatorEngine.transition()` with fixed six-step order — `src/stasis/engine.ts`
+- [x] Homeostatic restoring force, event-driven rather than wall-clock — `src/stasis/homeostasis.ts`
+- [x] Cross-variable interactions, order-independent — `src/stasis/interactions.ts`
 - [x] `PolicyAdapter`: ten policy fields from one bounded linear form — `src/policy/adapter.ts`
 - [x] Quantization to 6dp so replays cannot drift
 - [x] `config/default.yaml` + 6 named profiles, pinned to the built-in defaults by test
@@ -56,14 +56,14 @@ Deterministic engine with no Pi dependency.
 
 - [x] Deterministic command classification and outcome reading — `src/appraisal/command-classifier.ts`
 - [x] Appraiser: tool outcome → events, no LLM — `src/appraisal/appraiser.ts`
-- [x] `NeuroRuntime` orchestrator, no Pi dependency — `src/runtime/neuro-runtime.ts`
+- [x] `StasisRuntime` orchestrator, no Pi dependency — `src/runtime/stasis-runtime.ts`
 - [x] Config discovery: shipped → profile → project → user → env — `src/runtime/config-loader.ts`
 - [x] Pi adapter with every handler guarded — `src/extension.ts`
 - [x] State persisted via `pi.appendEntry` as a `custom` entry (structurally invisible to the LLM)
 - [x] Restore on `session_start` **and** `session_tree` (fork/branch correctness)
 - [x] Two-channel injection: static preamble in system prompt, dynamic block at message tail
-- [x] Commands: `/neuro`, `status`, `history`, `reset`, `enable`, `disable`, `config`, `debug`, `export`
-- [x] `.pi/extensions/neuro.ts` so `pi` self-loads in this repo
+- [x] Commands: `/stasis`, `status`, `history`, `reset`, `enable`, `disable`, `config`, `debug`, `export`
+- [x] `.pi/extensions/stasis.ts` so `pi` self-loads in this repo
 - [x] Tests: `tests/extension.test.ts` (32) against a `FakeExtensionAPI`
 
 ### ✅ M3 — Enforcement
@@ -85,28 +85,28 @@ Deterministic engine with no Pi dependency.
 - [x] Best-effort recorder; a broken sink degrades to silence — `src/telemetry/recorder.ts`
 - [x] Run header carrying all §24 reproducibility metadata
 - [x] Full chain reconstructible offline: appraisal → transition → policy → enforcement
-- [x] TUI panel and status line — `src/ui/neuro-status.ts`
-- [ ] **`/neuro export` reports the telemetry path but does not write an export** — see [G4](#g4-neuro-export-does-not-export)
+- [x] TUI panel and status line — `src/ui/stasis-status.ts`
+- [ ] **`/stasis export` reports the telemetry path but does not write an export** — see [G4](#g4-stasis-export-does-not-export)
 
 ### ✅ M5 — Experiment runner
 
 - [x] Types and conditions — `experiments/types.ts`
 - [x] Benchmark + fixture loading, provider-agnostic — `experiments/benchmark.ts`
 - [x] Per-trial subprocess isolation — `experiments/trial.ts`, `experiments/runner.ts`
-- [x] Four conditions: `bare`, `control` (observer), `static`, `neuro`
+- [x] Four conditions: `bare`, `control` (observer), `static`, `stasis`
 - [x] Everything pinned across arms: no discovered extensions/skills/themes/context files, shared system prompt
 - [x] Turn cap by counting `turn_end` + abort; wall-clock timeout
 - [x] Grading against a pristine checkout with hidden tests — `experiments/grade.ts`
 - [x] Visible-pass vs hidden-pass reported separately
 - [x] Three discriminative fixtures, each verified to fail shipped / pass when correctly fixed / reject the shortcut
 - [x] `extensionInert` self-check that invalidates a run where extensions never activated
-- [x] `PI_NEURO_FAUX=1` scripted agent for credential-free pipeline validation — `experiments/faux-agent.ts`
+- [x] `PI_STASIS_FAUX=1` scripted agent for credential-free pipeline validation — `experiments/faux-agent.ts`
 - [x] Tests: `tests/experiments.test.ts` (27), `tests/live-session.test.ts` (5, real Pi session)
 
 ### ✅ M6 — Metrics and analysis
 
 - [x] All §22 metrics from the extension's own records — `experiments/metrics.ts`
-- [x] Neuro-only series: mean/peak stress, min persistence, fatigue, regime share
+- [x] Stasis-only series: mean/peak stress, min persistence, fatigue, regime share
 - [x] §23 behavioral metrics, computed identically for **both** arms
 - [x] Comparison report: outcomes / behavior / physiology + per-task tables — `experiments/analysis.ts`
 - [x] Spread printed alongside every mean; small-n caveat printed automatically
@@ -121,17 +121,17 @@ All ten, plus the automated experiment, are met.
 
 | | | Where |
 |---|---|---|
-| 1 | initializes persistent NeuroState | `session_start` → `NeuroRuntime`, restored from session entries |
+| 1 | initializes persistent StasisState | `session_start` → `StasisRuntime`, restored from session entries |
 | 2 | observes coding-tool outcomes | `tool_result` handler |
 | 3 | identifies test success / failure / repeated failure | classifier + `FailureDetector` |
-| 4 | updates NeuroState deterministically | `engine.ts`, quantized, replay-tested |
+| 4 | updates StasisState deterministically | `engine.ts`, quantized, replay-tested |
 | 5 | derives an AgentPolicy | `adapter.ts` |
 | 6 | injects policy into subsequent model context | `context` event; verified in a real Pi session |
-| 7 | displays current state with `/neuro` | `registerCommand` + TUI panel |
+| 7 | displays current state with `/stasis` | `registerCommand` + TUI panel |
 | 8 | logs every transition | JSONL telemetry |
-| 9 | allows `/neuro reset` | exact return to baselines, tested |
-| 10 | allows neuromodulation to be disabled | `/neuro disable`, plus `mode: off` |
-| + | one automated SDK experiment, control vs neuro, comparative metrics | `npm run experiment` |
+| 9 | allows `/stasis reset` | exact return to baselines, tested |
+| 10 | allows neuromodulation to be disabled | `/stasis disable`, plus `mode: off` |
+| + | one automated SDK experiment, control vs stasis, comparative metrics | `npm run experiment` |
 
 ---
 
@@ -142,7 +142,7 @@ Ordered by how much they matter. Everything here is verified, not suspected.
 ### G1 — `STRATEGY_CHANGE` never fires
 
 **The most significant gap.** `FailureDetector.detectStrategyChange()` and
-`NeuroRuntime.noteStrategyChange()` both exist and are unit-tested, but **neither has a
+`StasisRuntime.noteStrategyChange()` both exist and are unit-tested, but **neither has a
 call site in the extension**. Nothing detects a change of approach during a real session.
 
 Consequences:
@@ -154,7 +154,7 @@ Consequences:
 - the repeated-failure → strategy-change loop the study is built around is only half wired
 
 **To fix:** call `detectStrategyChange(attempt, kind, files)` from
-`NeuroRuntime.observeToolResult()` — the fingerprints needed are already computed there —
+`StasisRuntime.observeToolResult()` — the fingerprints needed are already computed there —
 and emit via `noteStrategyChange()` when it returns true. Add extension-level tests
 alongside the existing detector unit tests, and confirm the metric moves in a faux run.
 
@@ -178,13 +178,13 @@ entries should be treated as aspirational until wired.
 
 `renderTrajectoryCsv()` in `experiments/analysis.ts` is written and correct, but the
 runner never calls it, so no `trajectories.csv` is produced. Spec §30 asks for
-"NeuroState trajectory data suitable for graphing". One `writeFileSync` in
+"StasisState trajectory data suitable for graphing". One `writeFileSync` in
 `experiments/runner.ts` closes this.
 
-### G4 — `/neuro export` does not export
+### G4 — `/stasis export` does not export
 
 It prints where telemetry is being written. It does not copy or transform anything.
-Either make it write a file to a given path or rename it to `/neuro telemetry`.
+Either make it write a file to a given path or rename it to `/stasis telemetry`.
 
 ### G5 — Never run against a real model
 
@@ -193,7 +193,7 @@ real model, real tool loop, real cost, real timing. Everything that *can* be ver
 without a model has been. What has not been observed even once:
 
 - whether an LLM actually complies with the injected policy block
-- how it reacts to a `BLOCKED_BY_NEURO_POLICY` refusal (complies? argues? routes around
+- how it reacts to a `BLOCKED_BY_STASIS_POLICY` refusal (complies? argues? routes around
   it via bash?)
 - whether the fixtures discriminate between conditions in practice
 - real token overhead of injection (the faux run suggests ~2.5k tokens/turn, which is
@@ -203,7 +203,7 @@ without a model has been. What has not been observed even once:
 
 ```bash
 export OPENROUTER_API_KEY=...
-npx tsx scripts/smoke-trial.ts bug-003-easy-control neuro
+npx tsx scripts/smoke-trial.ts bug-003-easy-control stasis
 ```
 
 Then one interactive session, then `--trials 1` across all conditions before scaling.
@@ -291,7 +291,7 @@ Each of these was hit and cost real time. All are now covered by a test.
 6. **`before_provider_request` does not fire for the faux provider** (it makes no HTTP
    call). Capture the context inside a `FauxResponseFactory` instead — which is a better
    check anyway, since it is what the model actually received.
-7. **Pi's block marker is `BLOCKED_BY_NEURO_POLICY` with underscores.** The producer and
+7. **Pi's block marker is `BLOCKED_BY_STASIS_POLICY` with underscores.** The producer and
    consumer of that string live in different modules; when they drifted, every refusal was
    silently reappraised as a code failure, letting enforcement manufacture the failures
    that justify more enforcement. Pinned by a test that runs a real refusal through the
@@ -306,7 +306,7 @@ Each of these was hit and cost real time. All are now covered by a test.
 | `npm test` | 216 tests across physiology, appraisal, enforcement, extension, harness | no |
 | `npm run typecheck` | types agree with installed Pi 0.84.2 | no |
 | `npm run demo:sequence` | identical inputs → byte-identical state history | no |
-| `PI_NEURO_FAUX=1 npm run experiment -- <benchmark> --trials 1` | runner → trial → grade → metrics → report | no |
+| `PI_STASIS_FAUX=1 npm run experiment -- <benchmark> --trials 1` | runner → trial → grade → metrics → report | no |
 | `npx tsx scripts/smoke-trial.ts <fixture> <condition>` | one trial end to end | **yes** |
 | `pi -e src/extension.ts` in a project | interactive behavior | **yes** |
 
@@ -315,12 +315,12 @@ Test distribution: `engine` 30, `policy` 38, `appraisal` 66, `config-files` 17,
 
 ### Expected faux-study signature
 
-A healthy pipeline, `--trials 1 --conditions bare,control,static,neuro --task bug-003-easy-control`:
+A healthy pipeline, `--trials 1 --conditions bare,control,static,stasis --task bug-003-easy-control`:
 
 - all four arms succeed (the scripted agent fixes this fixture correctly)
 - `bare` ≈ `control` in tokens (~7.15k) — observer mode inert
-- `static` and `neuro` ~9.7k tokens — injection present
-- `static` shows **0 policy changes** and stress pinned at baseline; `neuro` shows ~7
+- `static` and `stasis` ~9.7k tokens — injection present
+- `static` shows **0 policy changes** and stress pinned at baseline; `stasis` shows ~7
 - no `extensionInert` trials
 
 Deviation from this means something in the wiring has regressed.

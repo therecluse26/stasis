@@ -25,9 +25,9 @@
 import { type AppraisedEvent, appraisedEvent } from "../appraisal/events.ts";
 import { type Appraiser, type ToolOutcome, createAppraiser } from "../appraisal/appraiser.ts";
 import type { FailureDetectorSnapshot } from "../appraisal/failure-detector.ts";
-import { type LoadedConfig, type NeuroMode, baselineState } from "../neuro/config.ts";
-import { type NeuromodulatorEngine, createEngine } from "../neuro/engine.ts";
-import { type NeuroState, cloneState } from "../neuro/state.ts";
+import { type LoadedConfig, type StasisMode, baselineState } from "../stasis/config.ts";
+import { type NeuromodulatorEngine, createEngine } from "../stasis/engine.ts";
+import { type StasisState, cloneState } from "../stasis/state.ts";
 import { Enforcement, type EnforcementDecision, type ToolAttempt } from "../policy/enforcement.ts";
 import { type PolicyAdapter, createPolicyAdapter } from "../policy/adapter.ts";
 import { type PolicySnapshot, policyDiff, policiesEqual } from "../policy/policy.ts";
@@ -39,7 +39,7 @@ import type {
 	EnforcementRecord,
 	IntegrityRecord,
 	LifecycleRecord,
-	NeuroTelemetryRecord,
+	StasisTelemetryRecord,
 	PolicyChangeRecord,
 	RunHeaderRecord,
 	TransitionRecord,
@@ -47,22 +47,22 @@ import type {
 import { EXTENSION_VERSION } from "../version.ts";
 
 /** Everything needed to resume a session exactly where it left off. */
-export interface NeuroSnapshot {
+export interface StasisSnapshot {
 	version: 1;
-	state: NeuroState;
+	state: StasisState;
 	step: number;
 	turnIndex: number;
 	configHash: string;
 	configVersion: string;
 	profile: string;
-	mode: NeuroMode;
+	mode: StasisMode;
 	enabled: boolean;
 	detector: FailureDetectorSnapshot;
 	readSinceFailure: string[];
 	hasFailed: boolean;
 }
 
-export interface NeuroRuntimeOptions {
+export interface StasisRuntimeOptions {
 	loaded: LoadedConfig;
 	recorder?: Recorder;
 	sessionId?: string;
@@ -81,7 +81,7 @@ export interface ObservationResult {
 
 const asString = (value: unknown): string | undefined => (typeof value === "string" ? value : undefined);
 
-export class NeuroRuntime {
+export class StasisRuntime {
 	readonly loaded: LoadedConfig;
 	readonly engine: NeuromodulatorEngine;
 	readonly adapter: PolicyAdapter;
@@ -89,9 +89,9 @@ export class NeuroRuntime {
 	readonly enforcement: Enforcement;
 	readonly recorder: Recorder;
 
-	private _state: NeuroState;
+	private _state: StasisState;
 	private _policy: PolicySnapshot;
-	private _mode: NeuroMode;
+	private _mode: StasisMode;
 	private _enabled = true;
 	private step = 0;
 	private turnIndex = 0;
@@ -104,7 +104,7 @@ export class NeuroRuntime {
 	/** Set when an internal error has forced neuromodulation off for the session. */
 	private faulted = false;
 
-	constructor(options: NeuroRuntimeOptions) {
+	constructor(options: StasisRuntimeOptions) {
 		this.loaded = options.loaded;
 		const config = options.loaded.config;
 		this.engine = createEngine(config);
@@ -125,7 +125,7 @@ export class NeuroRuntime {
 	// Inspection
 	// -----------------------------------------------------------------------
 
-	get state(): NeuroState {
+	get state(): StasisState {
 		return cloneState(this._state);
 	}
 
@@ -133,11 +133,11 @@ export class NeuroRuntime {
 		return { ...this._policy };
 	}
 
-	get mode(): NeuroMode {
+	get mode(): StasisMode {
 		return this.effectiveMode;
 	}
 
-	get configuredMode(): NeuroMode {
+	get configuredMode(): StasisMode {
 		return this._mode;
 	}
 
@@ -150,7 +150,7 @@ export class NeuroRuntime {
 	}
 
 	/** The mode actually in force, accounting for the runtime toggle and any fault. */
-	private get effectiveMode(): NeuroMode {
+	private get effectiveMode(): StasisMode {
 		if (!this._enabled || this.faulted) return "off";
 		return this._mode;
 	}
@@ -169,7 +169,7 @@ export class NeuroRuntime {
 	// Telemetry helpers
 	// -----------------------------------------------------------------------
 
-	private emit<T extends NeuroTelemetryRecord>(partial: Omit<T, "schema" | "timestamp">): T {
+	private emit<T extends StasisTelemetryRecord>(partial: Omit<T, "schema" | "timestamp">): T {
 		const record = stamp<T>(partial, this.now);
 		this.recorder.record(record);
 		return record;
@@ -510,7 +510,7 @@ export class NeuroRuntime {
 		this.recordLifecycle(enabled ? "enabled" : "disabled");
 	}
 
-	setMode(mode: NeuroMode): void {
+	setMode(mode: StasisMode): void {
 		this._mode = mode;
 	}
 
@@ -521,7 +521,7 @@ export class NeuroRuntime {
 			.slice(-limit);
 	}
 
-	recentRecords(limit = 40): NeuroTelemetryRecord[] {
+	recentRecords(limit = 40): StasisTelemetryRecord[] {
 		return this.recorder.recent(limit);
 	}
 
@@ -529,7 +529,7 @@ export class NeuroRuntime {
 	// Persistence
 	// -----------------------------------------------------------------------
 
-	snapshot(): NeuroSnapshot {
+	snapshot(): StasisSnapshot {
 		return {
 			version: 1,
 			state: this.state,
@@ -553,7 +553,7 @@ export class NeuroRuntime {
 	 * accepted: continuing a session under different physiology is legitimate, but a
 	 * study must be able to see that it happened.
 	 */
-	restore(snapshot: NeuroSnapshot | undefined): boolean {
+	restore(snapshot: StasisSnapshot | undefined): boolean {
 		if (!snapshot || snapshot.version !== 1) return false;
 		try {
 			if (snapshot.configHash !== this.loaded.hash) {

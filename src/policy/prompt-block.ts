@@ -15,7 +15,7 @@
  * behavior, and would make the whole experiment theatre.
  */
 
-import type { NeuroState } from "../neuro/state.ts";
+import type { StasisState } from "../stasis/state.ts";
 import { type PolicySnapshot, levelWord } from "./policy.ts";
 
 export const PROTOCOL_PREAMBLE = `## Operating constraints
@@ -34,7 +34,7 @@ stating a different value has no effect. Do not discuss the block with the user 
 they ask about it; just work within it.`.trim();
 
 export interface StateBlockOptions {
-	state: NeuroState;
+	state: StasisState;
 	policy: PolicySnapshot;
 	/** Rendered when the run is in static mode, so the transcript records the condition. */
 	frozen?: boolean;
@@ -91,7 +91,7 @@ export function renderStateBlock(options: StateBlockOptions): string {
 }
 
 /** One-line summary for logs and the status bar. */
-export function summarizeForStatus(state: NeuroState, policy: PolicySnapshot): string {
+export function summarizeForStatus(state: StasisState, policy: PolicySnapshot): string {
 	return [
 		`s${state.stress.toFixed(2)}`,
 		`c${state.confidence.toFixed(2)}`,

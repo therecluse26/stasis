@@ -64,7 +64,7 @@ export function loadBenchmark(path: string): { benchmark: Benchmark; fixtures: M
 		throw new BenchmarkError(`${path}: model requires provider and model`);
 	}
 
-	const conditions = (Array.isArray(raw.conditions) ? raw.conditions : ["control", "neuro"]) as Condition[];
+	const conditions = (Array.isArray(raw.conditions) ? raw.conditions : ["control", "stasis"]) as Condition[];
 	for (const condition of conditions) {
 		if (!CONDITIONS.includes(condition)) {
 			throw new BenchmarkError(`${path}: unknown condition "${condition}" (expected ${CONDITIONS.join(", ")})`);

@@ -1,5 +1,5 @@
 {
-  "name": "pi-neuro",
+  "name": "stasis",
   "version": "0.1.0",
   "description": "Synthetic physiology for the Pi coding agent: homeostatic internal state that causally modifies agent behavior",
   "license": "MIT",

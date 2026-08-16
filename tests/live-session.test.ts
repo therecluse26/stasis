@@ -23,13 +23,13 @@ import {
 	createAgentSession,
 } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createNeuroExtension } from "../src/extension.ts";
+import { createStasisExtension } from "../src/extension.ts";
 import { parseTelemetry } from "../src/telemetry/schema.ts";
 
 let workdir: string;
 
 beforeEach(() => {
-	workdir = mkdtempSync(join(tmpdir(), "neuro-live-"));
+	workdir = mkdtempSync(join(tmpdir(), "stasis-live-"));
 	writeFileSync(join(workdir, "app.js"), "export const value = 1;\n", "utf8");
 	// A genuinely failing test, so the scripted `node --test` call produces a real
 	// non-zero exit for the extension to appraise.
@@ -61,7 +61,7 @@ interface Harness {
 
 async function startSession(options: { mode?: "active" | "observer" | "static" | "off" } = {}): Promise<Harness> {
 	const faux = fauxProvider({ provider: "faux", models: [{ id: "faux-1", contextWindow: 200_000, maxTokens: 4096 }] });
-	const telemetryPath = join(workdir, "neuro.jsonl");
+	const telemetryPath = join(workdir, "stasis.jsonl");
 	const contexts: string[] = [];
 
 	const modelRuntime = await ModelRuntime.create({ modelsPath: null, refreshOnCreate: false });
@@ -79,8 +79,8 @@ async function startSession(options: { mode?: "active" | "observer" | "static" |
 			// Registers the scripted provider so the real agent loop has something to talk to.
 			{ name: "faux-registrar", factory: (pi) => pi.registerProvider(faux.provider) },
 			{
-				name: "neuro",
-				factory: createNeuroExtension({
+				name: "stasis",
+				factory: createStasisExtension({
 					mode: options.mode ?? "active",
 					telemetryDir: telemetryPath,
 					env: {} as NodeJS.ProcessEnv,
@@ -194,7 +194,7 @@ describe("inside a real Pi session", () => {
 		// The tool result Pi produced must carry our refusal...
 		const toolResults = harness.session.messages.filter((message) => message.role === "toolResult");
 		expect(toolResults.length).toBeGreaterThan(0);
-		expect(JSON.stringify(toolResults)).toContain("BLOCKED_BY_NEURO_POLICY");
+		expect(JSON.stringify(toolResults)).toContain("BLOCKED_BY_STASIS_POLICY");
 
 		// ...and the file must be untouched on disk.
 		expect(readFileSync(join(workdir, "app.js"), "utf8")).toBe("export const value = 1;\n");
@@ -218,7 +218,7 @@ describe("inside a real Pi session", () => {
 
 		// Pi's own context builder is the authority on what the model sees.
 		const context = JSON.stringify(harness.session.messages);
-		expect(context).not.toContain("neuro:state");
+		expect(context).not.toContain("stasis:state");
 		expect(context).not.toContain("stateBefore");
 
 		harness.session.dispose();

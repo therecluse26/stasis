@@ -1,4 +1,4 @@
-# pi-neuro
+# Stasis
 
 A synthetic physiology for the [Pi coding agent](https://pi.dev). Five persistent,
 homeostatic variables observe what happens during a coding task and causally constrain
@@ -46,22 +46,22 @@ Nothing above needs credentials or network access.
 npm install -g --ignore-scripts @earendil-works/pi-coding-agent
 
 cd /path/to/your/project
-pi -e /path/to/pi-neuro/src/extension.ts
+pi -e /path/to/stasis/src/extension.ts
 ```
 
 Then work normally. A panel above the editor shows current state and policy.
 
 | Command | |
 |---|---|
-| `/neuro` | current state and derived policy |
-| `/neuro history [n]` | recent state transitions |
-| `/neuro debug [n]` | appraisals, transitions and enforcement, with reasons |
-| `/neuro config` | active physiology, its source files and content hash |
-| `/neuro reset` | return to configured baselines |
-| `/neuro disable` / `/neuro enable` | toggle without changing anything else |
-| `/neuro export` | where telemetry is being written |
+| `/stasis` | current state and derived policy |
+| `/stasis history [n]` | recent state transitions |
+| `/stasis debug [n]` | appraisals, transitions and enforcement, with reasons |
+| `/stasis config` | active physiology, its source files and content hash |
+| `/stasis reset` | return to configured baselines |
+| `/stasis disable` / `/stasis enable` | toggle without changing anything else |
+| `/stasis export` | where telemetry is being written |
 
-Every transition is logged to `.pi/neuro/telemetry/<sessionId>.jsonl`. The authoritative
+Every transition is logged to `.pi/stasis/telemetry/<sessionId>.jsonl`. The authoritative
 account of why the agent behaved as it did lives there, not in the model's self-report.
 
 ## Configure the physiology
@@ -71,15 +71,15 @@ decay rates, the event map, cross-variable couplings, and the coefficients that 
 into policy. Named profiles in `config/profiles/` are overlays:
 
 ```bash
-PI_NEURO_PROFILE=risk-averse pi -e /path/to/pi-neuro/src/extension.ts
+PI_STASIS_PROFILE=risk-averse pi -e /path/to/stasis/src/extension.ts
 ```
 
 `balanced`, `risk-averse`, `exploratory`, `high-persistence`, `stress-sensitive`,
 `fast-recovery`. They are parameter sets, not personalities.
 
-Project and user overlays are picked up from `.pi/neuro.yaml` and
-`~/.pi/agent/neuro.yaml`. Environment overrides: `PI_NEURO_MODE`, `PI_NEURO_DISPLAY`,
-`PI_NEURO_ENFORCE=0`, `PI_NEURO_GUARD_BASH=1`, `PI_NEURO_TELEMETRY=0`.
+Project and user overlays are picked up from `.pi/stasis.yaml` and
+`~/.pi/agent/stasis.yaml`. Environment overrides: `PI_STASIS_MODE`, `PI_STASIS_DISPLAY`,
+`PI_STASIS_ENFORCE=0`, `PI_STASIS_GUARD_BASH=1`, `PI_STASIS_TELEMETRY=0`.
 
 ## Run a study
 
@@ -88,7 +88,7 @@ Project and user overlays are picked up from `.pi/neuro.yaml` and
 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --dry-run
 
 # Validate the whole pipeline with a scripted agent — no credentials, no cost
-PI_NEURO_FAUX=1 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 1
+PI_STASIS_FAUX=1 npm run experiment -- experiments/benchmarks/repeated-failure-study.yaml --trials 1
 
 # The real thing
 export OPENROUTER_API_KEY=...      # or run `pi` once and `/login openrouter`
@@ -104,7 +104,7 @@ Start small. Check the plan and the cost before committing to a full study.
 | `bare` | — | — | confirming `control` is genuinely inert |
 | `control` | none | none | the control: identical telemetry, zero influence |
 | `static` | frozen at baseline | constant | separating the dynamics from the extra prompt text |
-| `neuro` | live | live | the experimental arm |
+| `stasis` | live | live | the experimental arm |
 
 `control` runs the extension in observer mode so both arms are measured by identical
 code — a difference between them cannot be an artefact of measuring them differently.

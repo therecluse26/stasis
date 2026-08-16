@@ -1,4 +1,4 @@
-# pi-neuro — design
+# Stasis — design
 
 A synthetic physiology for the [Pi coding agent](https://pi.dev). A small set of
 persistent, homeostatic variables observe what happens during a coding task and
@@ -34,7 +34,7 @@ next agent action
 ```
 
 The model experiences the consequences of its internal state. It cannot set that state.
-There is no tool that writes to physiology, `/neuro reset` is dispatched only from user
+There is no tool that writes to physiology, `/stasis reset` is dispatched only from user
 input, and the state of record lives in memory plus session entries Pi owns. If the
 model emits `stress = 0`, nothing happens.
 
@@ -42,7 +42,7 @@ model emits `stress = 0`, nothing happens.
 
 | Layer | Location | Depends on Pi? |
 |---|---|---|
-| Physiology | `src/neuro/` | no |
+| Physiology | `src/stasis/` | no |
 | Policy | `src/policy/policy.ts`, `adapter.ts` | no |
 | Appraisal | `src/appraisal/` | types only |
 | Enforcement | `src/policy/enforcement.ts` | types only |
@@ -175,7 +175,7 @@ runs. This is a heuristic, not isolation. Real isolation needs a container.
 ## Persistence
 
 Physiological state is kept logically separate from conversational memory.
-`pi.appendEntry("neuro:state", …)` writes a `CustomEntry`, which Pi's
+`pi.appendEntry("stasis:state", …)` writes a `CustomEntry`, which Pi's
 `sessionEntryToContextMessages()` drops when assembling LLM context — so it is
 structurally impossible for the stored history to reach the model. Entries are ordinary
 tree nodes, so forking and `/tree` navigation scope them correctly for free.

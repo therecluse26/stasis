@@ -8,7 +8,7 @@ import {
 	isTruncated,
 } from "../src/appraisal/command-classifier.ts";
 import { FailureDetector } from "../src/appraisal/failure-detector.ts";
-import { baselineState } from "../src/neuro/config.ts";
+import { baselineState } from "../src/stasis/config.ts";
 import { createPolicyAdapter } from "../src/policy/adapter.ts";
 import { Enforcement } from "../src/policy/enforcement.ts";
 import {
@@ -18,7 +18,7 @@ import {
 	fingerprintFailure,
 	normalizeCommand,
 } from "../src/appraisal/fingerprints.ts";
-import { buildConfig } from "../src/neuro/config.ts";
+import { buildConfig } from "../src/stasis/config.ts";
 
 const { config } = buildConfig();
 
@@ -43,7 +43,7 @@ describe("bash outcome", () => {
 	});
 
 	it("recognizes a harness refusal, which is not evidence about the code", () => {
-		expect(classifyBashOutcome("BLOCKED_BY_NEURO_POLICY (retryLimit)\n\nreason", true).kind).toBe("blocked");
+		expect(classifyBashOutcome("BLOCKED_BY_STASIS_POLICY (retryLimit)\n\nreason", true).kind).toBe("blocked");
 	});
 
 	it("recognizes the exact text enforcement actually emits", () => {
@@ -349,7 +349,7 @@ describe("appraiser", () => {
 			toolName: "bash",
 			toolCallId: "c1",
 			input: { command: "npm test" },
-			text: "BLOCKED_BY_NEURO_POLICY (retryLimit)\n\nchange approach",
+			text: "BLOCKED_BY_STASIS_POLICY (retryLimit)\n\nchange approach",
 			isError: true,
 		});
 		expect(events).toEqual([]);

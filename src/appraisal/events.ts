@@ -4,7 +4,7 @@
  * This module is deliberately dependency-free: it describes *what happened*, never
  * *how physiology responds*. The mapping from an event to a physiological delta lives
  * entirely in configuration (see `config/default.yaml`), and is applied by
- * `src/neuro/engine.ts`.
+ * `src/stasis/engine.ts`.
  */
 
 export const AGENT_EVENT_TYPES = [

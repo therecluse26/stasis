@@ -11,12 +11,12 @@
  */
 
 import { readFileSync } from "node:fs";
-import type { NeuroState } from "../src/neuro/state.ts";
+import type { StasisState } from "../src/stasis/state.ts";
 import {
 	type AppraisalRecord,
 	type BypassRecord,
 	type EnforcementRecord,
-	type NeuroTelemetryRecord,
+	type StasisTelemetryRecord,
 	type PolicyChangeRecord,
 	type RunHeaderRecord,
 	type TransitionRecord,
@@ -65,7 +65,7 @@ export function emptyMetrics(): TrialMetrics {
 	};
 }
 
-export function readTelemetry(path: string): NeuroTelemetryRecord[] {
+export function readTelemetry(path: string): StasisTelemetryRecord[] {
 	try {
 		return parseTelemetry(readFileSync(path, "utf8"));
 	} catch {
@@ -73,7 +73,7 @@ export function readTelemetry(path: string): NeuroTelemetryRecord[] {
 	}
 }
 
-export function runHeader(records: NeuroTelemetryRecord[]): RunHeaderRecord | undefined {
+export function runHeader(records: StasisTelemetryRecord[]): RunHeaderRecord | undefined {
 	return records.find((record): record is RunHeaderRecord => record.type === "run_header");
 }
 
@@ -85,7 +85,7 @@ function medianOf(values: number[]): number {
 	return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!;
 }
 
-export function computeMetrics(records: NeuroTelemetryRecord[]): TrialMetrics {
+export function computeMetrics(records: StasisTelemetryRecord[]): TrialMetrics {
 	const metrics = emptyMetrics();
 
 	const transitions = records.filter((r): r is TransitionRecord => r.type === "transition");
@@ -123,7 +123,7 @@ export function computeMetrics(records: NeuroTelemetryRecord[]): TrialMetrics {
 	// --- physiology, recorded in every arm ---------------------------------
 	if (transitions.length > 0) {
 		const states = transitions.map((record) => record.stateAfter);
-		const pick = (key: keyof NeuroState) => states.map((state) => state[key]);
+		const pick = (key: keyof StasisState) => states.map((state) => state[key]);
 		metrics.meanStress = round(mean(pick("stress")));
 		metrics.peakStress = round(Math.max(...pick("stress")));
 		metrics.meanConfidence = round(mean(pick("confidence")));

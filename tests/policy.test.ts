@@ -6,10 +6,10 @@ import {
 	buildConfig,
 	validateConfig,
 	validateDynamics,
-} from "../src/neuro/config.ts";
-import { createEngine } from "../src/neuro/engine.ts";
-import { interactionDelta } from "../src/neuro/interactions.ts";
-import type { NeuroState } from "../src/neuro/state.ts";
+} from "../src/stasis/config.ts";
+import { createEngine } from "../src/stasis/engine.ts";
+import { interactionDelta } from "../src/stasis/interactions.ts";
+import type { StasisState } from "../src/stasis/state.ts";
 import { createPolicyAdapter, derivePolicy, policyUnit } from "../src/policy/adapter.ts";
 import { POLICY_FIELDS, levelWord, policiesEqual, policyDiff } from "../src/policy/policy.ts";
 
@@ -18,7 +18,7 @@ const adapter = createPolicyAdapter(config);
 const base = () => baselineState(config);
 
 /** Same baseline with one variable overridden. */
-const at = (variable: keyof NeuroState, value: number): NeuroState => ({ ...base(), [variable]: value });
+const at = (variable: keyof StasisState, value: number): StasisState => ({ ...base(), [variable]: value });
 
 describe("policy derivation", () => {
 	it("is a pure function of state", () => {
@@ -27,7 +27,7 @@ describe("policy derivation", () => {
 	});
 
 	it("keeps every field inside its configured range", () => {
-		const extremes: NeuroState[] = [
+		const extremes: StasisState[] = [
 			{ stress: 0, confidence: 0, noveltyDrive: 0, fatigue: 0, persistence: 0 },
 			{ stress: 1, confidence: 1, noveltyDrive: 1, fatigue: 1, persistence: 1 },
 			{ stress: 1, confidence: 0, noveltyDrive: 1, fatigue: 1, persistence: 0 },

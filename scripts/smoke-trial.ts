@@ -20,10 +20,10 @@ import type { Condition, TrialRequest } from "../experiments/types.ts";
 const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const fixtureId = process.argv[2] ?? "bug-003-easy-control";
-const condition = (process.argv[3] ?? "neuro") as Condition;
+const condition = (process.argv[3] ?? "stasis") as Condition;
 
 const fixture = loadFixture(join(PACKAGE_ROOT, "experiments", "fixtures", fixtureId));
-const outputDir = mkdtempSync(join(tmpdir(), "neuro-smoke-"));
+const outputDir = mkdtempSync(join(tmpdir(), "stasis-smoke-"));
 
 const request: TrialRequest = {
 	benchmark: "smoke",
@@ -32,11 +32,11 @@ const request: TrialRequest = {
 	condition,
 	trial: 1,
 	model: {
-		provider: process.env.PI_NEURO_SMOKE_PROVIDER ?? "openrouter",
-		model: process.env.PI_NEURO_SMOKE_MODEL ?? "anthropic/claude-sonnet-4.5",
+		provider: process.env.PI_STASIS_SMOKE_PROVIDER ?? "openrouter",
+		model: process.env.PI_STASIS_SMOKE_MODEL ?? "anthropic/claude-sonnet-4.5",
 	},
-	maxTurns: Number(process.env.PI_NEURO_SMOKE_TURNS ?? 20),
-	timeoutSeconds: Number(process.env.PI_NEURO_SMOKE_TIMEOUT ?? 300),
+	maxTurns: Number(process.env.PI_STASIS_SMOKE_TURNS ?? 20),
+	timeoutSeconds: Number(process.env.PI_STASIS_SMOKE_TIMEOUT ?? 300),
 	outputDir,
 	packageRoot: PACKAGE_ROOT,
 };

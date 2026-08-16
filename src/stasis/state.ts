@@ -9,11 +9,11 @@
  *     two replays of the same event sequence diverge.
  */
 
-export const NEURO_VARIABLES = ["stress", "confidence", "noveltyDrive", "fatigue", "persistence"] as const;
+export const STASIS_VARIABLES = ["stress", "confidence", "noveltyDrive", "fatigue", "persistence"] as const;
 
-export type NeuroVariable = (typeof NEURO_VARIABLES)[number];
+export type StasisVariable = (typeof STASIS_VARIABLES)[number];
 
-export interface NeuroState {
+export interface StasisState {
 	stress: number;
 	confidence: number;
 	noveltyDrive: number;
@@ -21,7 +21,7 @@ export interface NeuroState {
 	persistence: number;
 }
 
-export type NeuroStateDelta = Partial<Record<NeuroVariable, number>>;
+export type StasisStateDelta = Partial<Record<StasisVariable, number>>;
 
 /** Six decimal places. Chosen to be far finer than any behaviorally meaningful change. */
 export const QUANTUM_DIGITS = 6;
@@ -56,23 +56,23 @@ export function clampMagnitude(value: number, limit: number): number {
 	return value;
 }
 
-export function emptyDelta(): NeuroStateDelta {
+export function emptyDelta(): StasisStateDelta {
 	return {};
 }
 
-export function deltaValue(delta: NeuroStateDelta, variable: NeuroVariable): number {
+export function deltaValue(delta: StasisStateDelta, variable: StasisVariable): number {
 	return delta[variable] ?? 0;
 }
 
 /** Add `amount` into `delta[variable]`, creating the key if needed. Mutates `delta`. */
-export function addToDelta(delta: NeuroStateDelta, variable: NeuroVariable, amount: number): void {
+export function addToDelta(delta: StasisStateDelta, variable: StasisVariable, amount: number): void {
 	if (amount === 0) return;
 	delta[variable] = quantize((delta[variable] ?? 0) + amount);
 }
 
-export function scaleDelta(delta: NeuroStateDelta, factor: number): NeuroStateDelta {
-	const out: NeuroStateDelta = {};
-	for (const variable of NEURO_VARIABLES) {
+export function scaleDelta(delta: StasisStateDelta, factor: number): StasisStateDelta {
+	const out: StasisStateDelta = {};
+	for (const variable of STASIS_VARIABLES) {
 		const value = delta[variable];
 		if (value === undefined || value === 0) continue;
 		out[variable] = quantize(value * factor);
@@ -80,10 +80,10 @@ export function scaleDelta(delta: NeuroStateDelta, factor: number): NeuroStateDe
 	return out;
 }
 
-export function sumDeltas(...deltas: NeuroStateDelta[]): NeuroStateDelta {
-	const out: NeuroStateDelta = {};
+export function sumDeltas(...deltas: StasisStateDelta[]): StasisStateDelta {
+	const out: StasisStateDelta = {};
 	for (const delta of deltas) {
-		for (const variable of NEURO_VARIABLES) {
+		for (const variable of STASIS_VARIABLES) {
 			const value = delta[variable];
 			if (value === undefined || value === 0) continue;
 			out[variable] = quantize((out[variable] ?? 0) + value);
@@ -93,9 +93,9 @@ export function sumDeltas(...deltas: NeuroStateDelta[]): NeuroStateDelta {
 }
 
 /** Drop zero-valued keys so telemetry records only what actually moved. */
-export function pruneDelta(delta: NeuroStateDelta): NeuroStateDelta {
-	const out: NeuroStateDelta = {};
-	for (const variable of NEURO_VARIABLES) {
+export function pruneDelta(delta: StasisStateDelta): StasisStateDelta {
+	const out: StasisStateDelta = {};
+	for (const variable of STASIS_VARIABLES) {
 		const value = delta[variable];
 		if (value === undefined || value === 0) continue;
 		out[variable] = value;
@@ -103,7 +103,7 @@ export function pruneDelta(delta: NeuroStateDelta): NeuroStateDelta {
 	return out;
 }
 
-export function cloneState(state: NeuroState): NeuroState {
+export function cloneState(state: StasisState): StasisState {
 	return {
 		stress: state.stress,
 		confidence: state.confidence,
@@ -113,18 +113,18 @@ export function cloneState(state: NeuroState): NeuroState {
 	};
 }
 
-export function statesEqual(a: NeuroState, b: NeuroState): boolean {
-	return NEURO_VARIABLES.every((variable) => a[variable] === b[variable]);
+export function statesEqual(a: StasisState, b: StasisState): boolean {
+	return STASIS_VARIABLES.every((variable) => a[variable] === b[variable]);
 }
 
 /** True when every variable is finite and within [0,1]. Used as a test invariant. */
-export function isValidState(state: NeuroState): boolean {
-	return NEURO_VARIABLES.every((variable) => {
+export function isValidState(state: StasisState): boolean {
+	return STASIS_VARIABLES.every((variable) => {
 		const value = state[variable];
 		return Number.isFinite(value) && value >= 0 && value <= 1;
 	});
 }
 
-export function formatState(state: NeuroState): string {
-	return NEURO_VARIABLES.map((variable) => `${variable}=${state[variable].toFixed(3)}`).join(" ");
+export function formatState(state: StasisState): string {
+	return STASIS_VARIABLES.map((variable) => `${variable}=${state[variable].toFixed(3)}`).join(" ");
 }

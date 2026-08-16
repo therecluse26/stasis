@@ -10,8 +10,8 @@
  * gauge on it, not a second application.
  */
 
-import type { NeuroState } from "../neuro/state.ts";
-import { NEURO_VARIABLES } from "../neuro/state.ts";
+import type { StasisState } from "../stasis/state.ts";
+import { STASIS_VARIABLES } from "../stasis/state.ts";
 import type { PolicySnapshot } from "../policy/policy.ts";
 
 export type ThemeFn = (color: string, text: string) => string;
@@ -20,7 +20,7 @@ const IDENTITY_THEME: ThemeFn = (_color, text) => text;
 
 const BAR_WIDTH = 10;
 
-const LABELS: Record<keyof NeuroState, string> = {
+const LABELS: Record<keyof StasisState, string> = {
 	stress: "stress",
 	confidence: "confidence",
 	noveltyDrive: "novelty",
@@ -29,7 +29,7 @@ const LABELS: Record<keyof NeuroState, string> = {
 };
 
 /** Which direction is "worse", so the display can colour movement meaningfully. */
-const RISING_IS_STRAIN: Record<keyof NeuroState, boolean> = {
+const RISING_IS_STRAIN: Record<keyof StasisState, boolean> = {
 	stress: true,
 	confidence: false,
 	noveltyDrive: false,
@@ -48,9 +48,9 @@ function trend(before: number | undefined, after: number): string {
 }
 
 export interface PanelOptions {
-	state: NeuroState;
+	state: StasisState;
 	policy: PolicySnapshot;
-	previous?: NeuroState;
+	previous?: StasisState;
 	mode: string;
 	enabled: boolean;
 	theme?: ThemeFn;
@@ -66,14 +66,14 @@ export function renderPanel(options: PanelOptions): string[] {
 	const { state, policy } = options;
 
 	if (!options.enabled) {
-		return [theme("dim", "Neuro  disabled — /neuro enable to resume")];
+		return [theme("dim", "Stasis  disabled — /stasis enable to resume")];
 	}
 
 	const lines: string[] = [];
-	const heading = options.mode === "active" ? "Neuro" : `Neuro (${options.mode})`;
+	const heading = options.mode === "active" ? "Stasis" : `Stasis (${options.mode})`;
 	lines.push(theme("accent", heading));
 
-	for (const variable of NEURO_VARIABLES) {
+	for (const variable of STASIS_VARIABLES) {
 		const value = state[variable];
 		const direction = trend(options.previous?.[variable], value);
 		const strained = RISING_IS_STRAIN[variable] ? value > 0.6 : value < 0.4;
@@ -95,12 +95,12 @@ export function renderPanel(options: PanelOptions): string[] {
 /** Compact single line for the footer status area. */
 export function renderStatus(options: PanelOptions): string {
 	const theme = options.theme ?? IDENTITY_THEME;
-	if (!options.enabled) return theme("dim", "neuro off");
+	if (!options.enabled) return theme("dim", "stasis off");
 	const { state, policy } = options;
 	const strain = state.stress > 0.6 || state.persistence < 0.3 ? "warning" : "dim";
 	return theme(
 		strain,
-		`neuro ${policy.regime.toLowerCase()} s${state.stress.toFixed(2)} c${state.confidence.toFixed(2)} p${state.persistence.toFixed(2)} patch≤${policy.maxPatchLines}`,
+		`stasis ${policy.regime.toLowerCase()} s${state.stress.toFixed(2)} c${state.confidence.toFixed(2)} p${state.persistence.toFixed(2)} patch≤${policy.maxPatchLines}`,
 	);
 }
 

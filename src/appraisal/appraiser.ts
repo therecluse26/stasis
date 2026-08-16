@@ -13,8 +13,8 @@
  * baseline rather than a fallback.
  */
 
-import type { NeuroConfig } from "../neuro/config.ts";
-import { clamp01 } from "../neuro/state.ts";
+import type { StasisConfig } from "../stasis/config.ts";
+import { clamp01 } from "../stasis/state.ts";
 import {
 	classifyBashOutcome,
 	classifyCommand,
@@ -95,7 +95,7 @@ function failureSeverity(repeatCount: number, truncated: boolean): number {
 	return clamp01(base + repetition + (truncated ? 0.05 : 0));
 }
 
-export function createAppraiser(config: NeuroConfig, detector = new FailureDetector(config.appraisal)): Appraiser {
+export function createAppraiser(config: StasisConfig, detector = new FailureDetector(config.appraisal)): Appraiser {
 	let step = 0;
 
 	function appraiseBash(outcome: ToolOutcome): AppraisalResult {
