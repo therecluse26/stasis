@@ -6,6 +6,7 @@ import {
 	classifyCommand,
 	detectMutationBypass,
 	isTruncated,
+	outcomeEventType,
 } from "../src/appraisal/command-classifier.ts";
 import { FailureDetector } from "../src/appraisal/failure-detector.ts";
 import { baselineState } from "../src/stasis/config.ts";
@@ -97,6 +98,14 @@ describe("command classification", () => {
 		["rg 'TODO' src", "inspect"],
 		["cat package.json", "inspect"],
 		["curl https://example.com", "other"],
+		// Reading commands that write. Seen for real: an agent replaced a whole source file
+		// with `cat > file << EOF` and it was appraised as inspection.
+		["cat > src/ranges.js << 'EOF'", "mutate"],
+		["echo 'x' > src/app.ts", "mutate"],
+		["ls > files.txt", "mutate"],
+		// Discarded output is not a write, and a redirected test run is still a test run.
+		["grep -r TODO src > /dev/null", "inspect"],
+		["node --test > run.log 2>&1", "test"],
 	];
 
 	for (const [command, expected] of cases) {
@@ -104,6 +113,18 @@ describe("command classification", () => {
 			expect(classifyCommand(command)).toBe(expected);
 		});
 	}
+
+	// Appraising a whole-file rewrite as inspection is worse than ignoring it: INSPECTION
+	// lowers stress, and it credits the agent with having looked at something in the very
+	// behavioural metrics the study compares between arms. With guardBash on, the enforcing
+	// arms block these and the control arm does not, so a false INSPECTION there is a
+	// difference between arms in measurement rather than in behaviour.
+	it("emits no event for a shell command that wrote a file", () => {
+		expect(outcomeEventType("mutate", false)).toBeUndefined();
+		expect(outcomeEventType("inspect", false)).toBe("INSPECTION");
+		// A write that failed is still a tool error worth appraising.
+		expect(outcomeEventType("mutate", true)).toBe("TOOL_ERROR");
+	});
 
 	it("looks past a leading cd or env assignment", () => {
 		expect(classifyCommand("cd packages/core && npm test")).toBe("test");
@@ -127,6 +148,11 @@ describe("bypass detection", () => {
 		"patch -p1 < fix.diff",
 		"python3 -c \"open('a.ts','w').write('x')\"",
 		"mv new.ts src/app.ts",
+		"node -e \"require('fs').writeFileSync('src/a.js', body)\"",
+		// Discarding the output does not undo the edit. Before, the `/dev/null` guard
+		// skipped the whole segment and this reported nothing at all.
+		"sed -i 's/a/b/' f.ts > /dev/null",
+		"perl -i -0777 -pe 's/a/b/' src/query.js",
 	];
 	for (const command of bypasses) {
 		it(`flags ${command.split("\n")[0]}`, () => {
@@ -135,9 +161,44 @@ describe("bypass detection", () => {
 	}
 
 	it("does not flag ordinary reads, tests or discarded output", () => {
-		for (const command of ["npm test", "cat src/app.ts", "grep -r TODO src", "npm test > /dev/null", "ls -la"]) {
+		for (const command of [
+			"npm test",
+			"cat src/app.ts",
+			"grep -r TODO src",
+			"npm test > /dev/null",
+			"npm test > /dev/null 2>&1",
+			"ls -la",
+			"node --test 2>&1",
+		]) {
 			expect(detectMutationBypass(command).suspected, command).toBe(false);
 		}
+	});
+
+	// These are the shapes an agent writes constantly while *reading* the code, and every
+	// one of them used to read as a shell redirect. In the 2026-08-16 study they accounted
+	// for 15 of 27 reported bypasses, which made the measure useless.
+	it("does not read comparison, arrow or arrow-member operators as redirects", () => {
+		for (const command of [
+			'node -e "const d = (iso) => new Date(iso); console.log(d(\'2024-01-01\'))"',
+			'node -e "console.log([1,2,3].map(x => x*2))"',
+			'node -e "const o = {a:1}; console.log(o.a >= 1)"',
+			"awk '$1 >= 5' data.txt",
+			'node -e "console.log(a->b)"',
+		]) {
+			expect(detectMutationBypass(command).suspected, command).toBe(false);
+		}
+	});
+
+	// The interpreter flag alone is not evidence: `node -e` is how an agent probes as well
+	// as how it would rewrite a file. Only the write makes it a bypass.
+	it("flags an inline script only when its body actually writes", () => {
+		expect(detectMutationBypass('node -e "console.log(process.version)"').suspected).toBe(false);
+		expect(detectMutationBypass('node -e "require(\'fs\').writeFileSync(\'a.js\', x)"').constructs).toContain(
+			"inline-script",
+		);
+		// Segmentation splits on the semicolon *inside the quoted body*, so the interpreter
+		// flag and the write land in different fragments. Checked whole-command for that.
+		expect(detectMutationBypass("python3 -c \"import os; os.remove('a.ts')\"").constructs).toContain("inline-script");
 	});
 
 	it("names the construct it matched, so telemetry is specific", () => {
@@ -174,6 +235,87 @@ describe("fingerprints", () => {
 			fingerprintFailure({ toolName: "bash", command: "npm test", errorText: error, exitCode: 1, maxErrorLines: 3 }).hash;
 		expect(make("AssertionError: expected 200 to be 401")).toBe(make("AssertionError: expected 200 to be 401"));
 		expect(make("AssertionError: expected 200 to be 401")).not.toBe(make("TypeError: undefined is not a function"));
+	});
+
+	// Node's test reporter marks a failure with U+2716 ✖, which was absent from the bullet
+	// class while U+2715 ✕, U+2717 ✗ and U+00D7 × were present. The consequence was not a
+	// missing line but a wrong identity: with no test name in the signal, every single-
+	// failure `node --test` run in the repo hashed to `8352abab6360` regardless of which
+	// test failed or even which fixture it came from. A different test starting to fail
+	// then read as the same failure repeating, which is precisely backwards.
+	describe("failing test identity", () => {
+		// Kept faithful to what `node --test` actually prints, tail block included. An
+		// earlier version of this helper stopped at the `!==` line, and the omission hid a
+		// real defect for as long as it existed: with no `expected:` line to reach, every
+		// assertion in a suite looked alike here while real output would have distinguished
+		// them. A fixture that is easier than the thing it stands for tests nothing.
+		const nodeTestOutput = (name: string, file: string, actual: number, expected: number) =>
+			[
+				`✖ ${name} (1.124323ms)`,
+				"ℹ tests 2",
+				"ℹ pass 1",
+				"ℹ fail 1",
+				"",
+				"✖ failing tests:",
+				"",
+				`test at ${file}:7:1`,
+				`✖ ${name} (1.124323ms)`,
+				"  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:",
+				"",
+				`  ${actual} !== ${expected}`,
+				"",
+				`      at TestContext.<anonymous> (file://${file}:9:9)`,
+				"    generatedMessage: true,",
+				"    code: 'ERR_ASSERTION',",
+				`    actual: ${actual},`,
+				`    expected: ${expected},`,
+				"    operator: 'strictEqual'",
+				"  }",
+			].join("\n");
+		const hash = (error: string) =>
+			fingerprintFailure({ toolName: "bash", command: "node --test", errorText: error, exitCode: 1, maxErrorLines: 3 })
+				.hash;
+
+		it("separates two different tests failing the same way", () => {
+			const billing = nodeTestOutput("a billing period counts both days", "test/ranges.test.js", 30, 31);
+			const clamp = nodeTestOutput("the maximum is inclusive", "test/clamp.test.js", 9, 10);
+			expect(hash(billing)).not.toBe(hash(clamp));
+		});
+
+		it("matches the same test failing the same way, which is what a repeat is", () => {
+			const attempt = () => hash(nodeTestOutput("counts what a reader sees", "test/width.test.js", 5, 4));
+			expect(attempt()).toBe(attempt());
+		});
+
+		// The other half, and the more important one. An agent whose change moves the failure
+		// to a later assertion has made progress, and appraising that as the same failure
+		// recurring drains persistence and tightens enforcement on an agent that is
+		// converging — the mechanism doing harm for precisely the wrong reason.
+		//
+		// This was the behaviour until 2026-08-16, and this test asserted it. `ℹ fail 1` and
+		// `✖ failing tests:` match the signal patterns and are identical in every failure of
+		// a suite, so with three lines kept they crowded out the assertion entirely and the
+		// values never reached the hash.
+		it("separates the same test failing with different values, because that is progress", () => {
+			const attempts = [
+				nodeTestOutput("counts what a reader sees", "test/width.test.js", 5, 4),
+				nodeTestOutput("counts what a reader sees", "test/width.test.js", 2, 1),
+			].map(hash);
+			expect(new Set(attempts).size).toBe(2);
+		});
+
+		it("does not spend its line budget on the reporter's tallies", () => {
+			const signal = extractErrorSignal(nodeTestOutput("counts what a reader sees", "test/width.test.js", 5, 4), 3);
+			expect(signal).not.toContain("fail 1");
+			expect(signal).not.toContain("failing tests");
+			expect(signal).toContain("expected: 4");
+		});
+
+		// Not a tally: a runner that reports "3 of 40 tests failed" as its only diagnosis
+		// still has to fingerprint, and dropping that line would leave nothing behind.
+		it("keeps a count that is the whole diagnosis rather than a footer under one", () => {
+			expect(extractErrorSignal("Error: 3 tests failed", 3)).toContain("3 tests failed");
+		});
 	});
 
 	it("groups exit codes into families rather than exact values", () => {

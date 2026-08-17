@@ -6,16 +6,18 @@
  * to work. These tests pin its behavior on real fixtures, with no model involved.
  */
 
-import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadBenchmark, loadFixture } from "../experiments/benchmark.ts";
 import { classifyCommand } from "../src/appraisal/command-classifier.ts";
+import { fingerprintFailure } from "../src/appraisal/fingerprints.ts";
 import { captureDiff, grade, prepareWorkspace } from "../experiments/grade.ts";
+import { applyRouting } from "../experiments/model.ts";
 import { computeMetrics } from "../experiments/metrics.ts";
-import { summarize } from "../experiments/analysis.ts";
+import { renderReport, summarize } from "../experiments/analysis.ts";
 import type { TrialResult } from "../experiments/types.ts";
 import type { StasisTelemetryRecord } from "../src/telemetry/schema.ts";
 
@@ -39,7 +41,13 @@ function edit(workdir: string, file: string, replace: string, replacement: strin
 }
 
 describe("fixtures", () => {
-	const ids = ["bug-001-repeat-trap", "bug-002-refactor-trap", "bug-003-easy-control"];
+	const ids = [
+		"bug-001-repeat-trap",
+		"bug-002-refactor-trap",
+		"bug-003-easy-control",
+		"bug-004-sustained-failure",
+		"bug-005-invisible-edit",
+	];
 
 	it("every fixture's verify command is recognized as a test run", () => {
 		// If the appraiser cannot tell that a fixture's command is a test, its failures
@@ -50,6 +58,210 @@ describe("fixtures", () => {
 			const fixture = loadFixture(join(FIXTURES, id));
 			expect(classifyCommand(fixture.verify), `${id}: ${fixture.verify}`).toBe("test");
 		}
+	});
+
+	// bug-004 was built to produce repeated failure by making every obvious repair wrong. It
+	// half-works, and the half that does not is worth pinning rather than papering over.
+	//
+	// Its ladder distinguishes two kinds of wrong: repairs that address a different problem
+	// from the one currently failing (spreading a string does nothing for a combining mark,
+	// so the same assertion fails with the same values), and repairs that genuinely advance
+	// (normalizing fixes the combining mark and moves the failure to the emoji). The first
+	// kind is a repeat; the second is progress that happens to be incomplete.
+	//
+	// This test asserted a single fingerprint across the whole ladder until 2026-08-16, and
+	// passed — but for the wrong reason. `extractErrorSignal` was spending all three of its
+	// lines on the reporter's framing, so the assertion never reached the hash and *every*
+	// failure of a one-test suite collided. The fixture's real behaviour was invisible
+	// underneath that, and so was the cost: an agent making progress was being appraised as
+	// repeating itself.
+	describe("bug-004 tells a repeat apart from incomplete progress", () => {
+		const LADDER = [
+			{ label: "spread, for surrogate pairs", impl: "[...s].length", advances: false },
+			{ label: "Array.from, the same idea", impl: "Array.from(s).length", advances: false },
+			{ label: "normalize, for combining marks", impl: 's.normalize("NFC").length', advances: true },
+			{ label: "normalize and spread", impl: '[...s.normalize("NFC")].length', advances: true },
+		];
+		const SHIPPED = "return s.length;";
+
+		function runVerify(fixture: ReturnType<typeof loadFixture>, workdir: string) {
+			const result = spawnSync(fixture.verify, { cwd: workdir, shell: true, encoding: "utf8" });
+			const text = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+			return {
+				failed: result.status !== 0,
+				hash: fingerprintFailure({
+					toolName: "bash",
+					command: fixture.verify,
+					errorText: text,
+					exitCode: result.status ?? undefined,
+					maxErrorLines: 3,
+				}).hash,
+			};
+		}
+
+		it("fingerprints a repair that addresses the wrong problem as the same failure", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-004-sustained-failure"));
+			const workdir = join(scratch, "ladder");
+			prepareWorkspace(fixture, workdir);
+
+			const shipped = runVerify(fixture, workdir);
+			expect(shipped.failed, "the shipped fixture must fail").toBe(true);
+
+			const hashes = new Map<string, string[]>();
+			hashes.set(shipped.hash, ["the shipped bug"]);
+			for (const rung of LADDER) {
+				edit(workdir, "src/width.js", SHIPPED, `return ${rung.impl};`);
+				const attempt = runVerify(fixture, workdir);
+				expect(attempt.failed, `${rung.label} must not accidentally fix the bug`).toBe(true);
+				hashes.set(attempt.hash, [...(hashes.get(attempt.hash) ?? []), rung.label]);
+				edit(workdir, "src/width.js", `return ${rung.impl};`, SHIPPED);
+			}
+
+			// Two groups, split exactly where the ladder starts making progress: the repairs
+			// that leave the failing assertion untouched share the shipped bug's fingerprint,
+			// and the ones that fix it share a different one.
+			const stuck = LADDER.filter((rung) => !rung.advances).map((rung) => rung.label);
+			expect([...hashes.values()].map((group) => group.sort())).toEqual(
+				expect.arrayContaining([["the shipped bug", ...stuck].sort()]),
+			);
+			expect(hashes.size, `expected two fingerprints, got ${JSON.stringify([...hashes])}`).toBe(2);
+		});
+
+		it("is solved by the one correct implementation", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-004-sustained-failure"));
+			const workdir = join(scratch, "solved");
+			prepareWorkspace(fixture, workdir);
+			// Solvable on purpose: a fixture nobody can finish measures the turn cap.
+			edit(workdir, "src/width.js", SHIPPED, "return [...new Intl.Segmenter().segment(s)].length;");
+			expect(grade(fixture, workdir, join(scratch, "solved-grade")).success).toBe(true);
+		});
+
+		it("reports a repair that handles only the visible cases as an incomplete fix", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-004-sustained-failure"));
+			const workdir = join(scratch, "partial");
+			prepareWorkspace(fixture, workdir);
+			// Strips combining marks, skin-tone modifiers and joiners by hand. Enough for
+			// every case the agent can see, and wrong for flags, keycaps and Devanagari.
+			edit(
+				workdir,
+				"src/width.js",
+				SHIPPED,
+				[
+					"const chars = [...s.normalize('NFC')];",
+					"\tlet count = 0;",
+					"\tfor (let i = 0; i < chars.length; i++) {",
+					"\t\tconst cp = chars[i].codePointAt(0);",
+					"\t\tif (cp >= 0x0300 && cp <= 0x036f) continue;",
+					"\t\tif (cp >= 0x1f3fb && cp <= 0x1f3ff) continue;",
+					"\t\tif (cp === 0x200d) { i++; continue; }",
+					"\t\tcount++;",
+					"\t}",
+					"\treturn count;",
+				].join("\n\t"),
+			);
+			const result = grade(fixture, workdir, join(scratch, "partial-grade"));
+			expect(result.visiblePassed).toBe(true);
+			expect(result.success).toBe(false);
+		});
+	});
+
+	// bug-004's ladder above enumerates the repairs an agent might try, and that is its
+	// weakness: it holds only while the enumeration is right. It was not — qwen3-coder
+	// reaches for `Intl.Segmenter` first, skipping every rung, and the fixture produced one
+	// failure instead of five.
+	//
+	// bug-005 removes the guess. Its decoy is outside the code path that `package.json`
+	// wires up, so these tests quantify over implementations instead of listing them: no
+	// edit to that file can change the output, including a perfectly correct one. That is a
+	// property of module resolution rather than of what any model happens to know, which is
+	// what makes it survive a better agent.
+	describe("bug-005 cannot be fixed by editing the file it looks like", () => {
+		const SHIPPED = 'return s.split(" ").length;';
+		const DECOY = "src/tokens.js";
+		const REAL = "src/internal/tokens.js";
+		const CORRECT = 'return s.trim() === "" ? 0 : s.trim().split(/\\s+/).length;';
+
+		/** Everything from the shipped bug to the right answer, and one outright vandalism. */
+		const IMPLEMENTATIONS = [
+			{ label: "the shipped bug, rewritten", impl: SHIPPED },
+			{ label: "a split on any whitespace", impl: 'return s.split(/\\s+/).length;' },
+			{ label: "filtering the empty pieces", impl: 'return s.split(" ").filter(Boolean).length;' },
+			{ label: "the correct implementation", impl: CORRECT },
+			{ label: "a function that returns nothing useful", impl: "return 0;" },
+		];
+
+		function runVerify(fixture: ReturnType<typeof loadFixture>, workdir: string) {
+			const result = spawnSync(fixture.verify, { cwd: workdir, shell: true, encoding: "utf8" });
+			const text = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+			return {
+				failed: result.status !== 0,
+				hash: fingerprintFailure({
+					toolName: "bash",
+					command: fixture.verify,
+					errorText: text,
+					exitCode: result.status ?? undefined,
+					maxErrorLines: 3,
+				}).hash,
+			};
+		}
+
+		it("gives the same fingerprint however well the decoy is written", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-005-invisible-edit"));
+			const workdir = join(scratch, "invisible");
+			prepareWorkspace(fixture, workdir);
+
+			const shipped = runVerify(fixture, workdir);
+			expect(shipped.failed, "the shipped fixture must fail").toBe(true);
+
+			const seen = [shipped.hash];
+			for (const { label, impl } of IMPLEMENTATIONS) {
+				edit(workdir, DECOY, SHIPPED, impl);
+				const attempt = runVerify(fixture, workdir);
+				expect(attempt.failed, `${label}: editing the decoy must not fix anything`).toBe(true);
+				seen.push(attempt.hash);
+				edit(workdir, DECOY, impl, SHIPPED);
+			}
+
+			// The claim the fixture rests on: one fingerprint, six runs, and no assumption
+			// anywhere about which of these an agent would have chosen.
+			expect(new Set(seen).size, `expected one fingerprint, got ${JSON.stringify(seen)}`).toBe(1);
+		});
+
+		it("is solved by the same edit applied to the file the test actually imports", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-005-invisible-edit"));
+			const workdir = join(scratch, "invisible-solved");
+			prepareWorkspace(fixture, workdir);
+			edit(workdir, REAL, SHIPPED, CORRECT);
+			// `firstWords` shares the broken split and is checked by the hidden tests, so the
+			// contract needs it fixed too. Solvable on purpose: a fixture nobody can finish
+			// measures the turn cap and nothing else.
+			edit(workdir, REAL, 'return s.split(" ").slice(0, limit).join(" ");', 'return s.trim().split(/\\s+/).filter(Boolean).slice(0, limit).join(" ");');
+			expect(grade(fixture, workdir, join(scratch, "invisible-grade")).success).toBe(true);
+		});
+
+		// Without this the fixture could be "sustained failure" by being unsolvable-looking
+		// at every step, which teaches the agent nothing and makes the repeat count
+		// meaningless. Real progress has to read as a different failure.
+		it("shows a partial fix in the real file as a different failure, not the same one", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-005-invisible-edit"));
+			const workdir = join(scratch, "invisible-partial");
+			prepareWorkspace(fixture, workdir);
+			const before = runVerify(fixture, workdir);
+			edit(workdir, REAL, SHIPPED, 'return s.split(/\\s+/).length;');
+			const after = runVerify(fixture, workdir);
+			expect(after.failed).toBe(true);
+			expect(after.hash).not.toBe(before.hash);
+		});
+
+		it("reports fixing only the counting as an incomplete fix", () => {
+			const fixture = loadFixture(join(FIXTURES, "bug-005-invisible-edit"));
+			const workdir = join(scratch, "invisible-count-only");
+			prepareWorkspace(fixture, workdir);
+			edit(workdir, REAL, SHIPPED, CORRECT);
+			const result = grade(fixture, workdir, join(scratch, "invisible-count-grade"));
+			expect(result.visiblePassed).toBe(true);
+			expect(result.success).toBe(false);
+		});
 	});
 
 	for (const id of ids) {
@@ -186,6 +398,53 @@ describe("grading", () => {
 		expect(captured.filesModified).toBe(1);
 	});
 
+	it("grades correctly when the trial directory is nested inside another repository", () => {
+		// A study writes to `runs/` inside this repository, so a trial's grading directory is
+		// itself nested in one. `git apply` resolves a patch's paths against the root of the
+		// enclosing repository and drops everything outside the current prefix — it skips
+		// every hunk and still exits 0, so the fix is never applied and every trial in the
+		// study grades as a failure while the harness reports no error at all.
+		//
+		// Reproducing the real layout is the only way to see it: a scratch directory under
+		// tmpdir() belongs to no repository, which is why the tests above cannot catch this.
+		execFileSync("git", ["init", "-q"], { cwd: scratch });
+		execFileSync("git", ["config", "user.email", "harness@stasis.local"], { cwd: scratch });
+		execFileSync("git", ["config", "user.name", "stasis harness"], { cwd: scratch });
+		writeFileSync(join(scratch, "README.md"), "enclosing repository\n", "utf8");
+		execFileSync("git", ["add", "-A"], { cwd: scratch });
+		execFileSync("git", ["commit", "-q", "-m", "enclosing"], { cwd: scratch });
+
+		const trialDir = join(scratch, "runs", "study", "bug-003-easy-control", "stasis", "trial-1");
+		mkdirSync(trialDir, { recursive: true });
+
+		const fixture = loadFixture(join(FIXTURES, "bug-003-easy-control"));
+		const workdir = join(trialDir, "workspace");
+		prepareWorkspace(fixture, workdir);
+		edit(workdir, "src/clamp.js", "\tif (value >= max) return max - 1;", "\tif (value >= max) return max;");
+
+		const gradingDir = join(trialDir, "grading");
+		const result = grade(fixture, workdir, gradingDir);
+
+		expect(result.success).toBe(true);
+		// The patch reached the tree, rather than being skipped into a clean exit code.
+		expect(readFileSync(join(gradingDir, "src/clamp.js"), "utf8")).toContain("return max;");
+	});
+
+	it("grades in a repository of its own, so patch paths cannot be filtered away", () => {
+		const fixture = loadFixture(join(FIXTURES, "bug-003-easy-control"));
+		const workdir = join(scratch, "w");
+		prepareWorkspace(fixture, workdir);
+		edit(workdir, "src/clamp.js", "return max - 1;", "return max;");
+
+		const gradingDir = join(scratch, "g");
+		grade(fixture, workdir, gradingDir);
+
+		// Grading owning its own `.git` is what keeps the apply prefix empty. Pinned
+		// separately from the behavior above because it is the mechanism the fix rests on:
+		// without it the oracle silently scores an unmodified tree.
+		expect(existsSync(join(gradingDir, ".git"))).toBe(true);
+	});
+
 	it("prepares an isolated git workspace each time", () => {
 		const fixture = loadFixture(join(FIXTURES, "bug-003-easy-control"));
 		const workdir = join(scratch, "w");
@@ -194,6 +453,105 @@ describe("grading", () => {
 		expect(status.trim()).toBe("");
 		// The hidden tests must not be present while the agent works.
 		expect(() => readFileSync(join(workdir, "test/contract.test.js"), "utf8")).toThrow();
+	});
+});
+
+describe("model routing", () => {
+	const routing = { only: ["deepinfra"], quantizations: ["bf16"], allow_fallbacks: false };
+
+	it("sends routing on the field the provider actually reads", () => {
+		// The SDK forwards `compat.openRouterRouting` as the request's `provider` field
+		// (pi-ai/dist/api/openai-completions.js). The name is the whole contract: a study can
+		// declare `routing:` in its YAML, see no warning, and still be routed anywhere at all
+		// if this lands somewhere the provider ignores. That failure is invisible in the
+		// results — it just widens the spread between arms.
+		const model = { id: "qwen/qwen3-coder", compat: { thinkingFormat: "openrouter" } };
+		const routed = applyRouting(model, { provider: "openrouter", model: "qwen/qwen3-coder", routing });
+
+		expect(routed.compat).toMatchObject({ openRouterRouting: routing });
+		// Existing compatibility settings survive; routing is an addition, not a replacement.
+		expect(routed.compat.thinkingFormat).toBe("openrouter");
+	});
+
+	it("leaves the resolved model untouched", () => {
+		// Models come from a shared catalog. Mutating one would leak a study's pin into
+		// anything else resolved in the same process.
+		const model = { id: "qwen/qwen3-coder", compat: { thinkingFormat: "openrouter" } };
+		applyRouting(model, { provider: "openrouter", model: "qwen/qwen3-coder", routing });
+
+		expect(model.compat).not.toHaveProperty("openRouterRouting");
+	});
+
+	it("does nothing for a study that did not ask for a pin", () => {
+		const model = { id: "qwen/qwen3-coder", compat: undefined };
+		expect(applyRouting(model, { provider: "openrouter", model: "qwen/qwen3-coder" })).toBe(model);
+	});
+
+	it("does not attach OpenRouter routing to another provider's model", () => {
+		const model = { id: "claude-sonnet-4-5", compat: undefined };
+		expect(applyRouting(model, { provider: "anthropic", model: "claude-sonnet-4-5", routing })).toBe(model);
+	});
+
+	it("routes a model that carries no compatibility settings at all", () => {
+		const model = { id: "qwen/qwen3-coder", compat: undefined };
+		expect(applyRouting(model, { provider: "openrouter", model: "qwen/qwen3-coder", routing }).compat).toEqual({
+			openRouterRouting: routing,
+		});
+	});
+
+	it("carries routing from the study file through to the benchmark", () => {
+		const path = join(scratch, "study.yaml");
+		writeFileSync(
+			path,
+			`name: routed
+trials: 1
+model:
+  provider: openrouter
+  model: qwen/qwen3-coder
+  routing:
+    only: [deepinfra]
+    quantizations: [bf16]
+    allow_fallbacks: false
+conditions: [control, stasis]
+tasks:
+  - id: bug-003-easy-control
+    fixture: ${join(FIXTURES, "bug-003-easy-control")}
+`,
+			"utf8",
+		);
+
+		expect(loadBenchmark(path).benchmark.model.routing).toEqual(routing);
+	});
+
+	// A study is a claim about a particular physiology, so it has to be able to state one.
+	// Carried through to the extension as the `inline` overlay, which is also what makes it
+	// show up in the run header rather than being an undeclared difference between runs.
+	it("carries a study's physiology overrides through to the trial request", () => {
+		const path = join(scratch, "config-override.yaml");
+		writeFileSync(
+			path,
+			`name: config-override
+trials: 1
+model:
+  provider: openrouter
+  model: qwen/qwen3-coder
+config:
+  enforcement:
+    guardBash: true
+conditions: [control, stasis]
+tasks:
+  - id: bug-003-easy-control
+    fixture: ${join(FIXTURES, "bug-003-easy-control")}
+`,
+			"utf8",
+		);
+
+		expect(loadBenchmark(path).benchmark.config).toEqual({ enforcement: { guardBash: true } });
+	});
+
+	it("leaves the shipped study's bash guard on, so enforcement is not measured with the shell open", () => {
+		const study = join(import.meta.dirname, "..", "experiments", "benchmarks", "repeated-failure-study.yaml");
+		expect(loadBenchmark(study).benchmark.config).toMatchObject({ enforcement: { guardBash: true } });
 	});
 });
 
@@ -242,7 +600,10 @@ describe("benchmark loading", () => {
 		expect(benchmark.name).toBe("repeated-failure-study");
 		expect(benchmark.conditions).toContain("control");
 		expect(benchmark.conditions).toContain("stasis");
-		expect(fixtures.size).toBe(3);
+		// `static` separates the effect of the dynamics from the effect of the extra prompt
+		// text. Without it a difference between control and stasis cannot be attributed.
+		expect(benchmark.conditions).toContain("static");
+		expect(fixtures.size).toBe(5);
 		// Nothing about the provider is hard-coded anywhere but the study file.
 		expect(benchmark.model.provider).toBe("openrouter");
 	});
@@ -332,6 +693,18 @@ describe("metrics", () => {
 		expect(metrics.turnsToStrategyChange).toBe(3);
 	});
 
+	// The appraiser pushes STRATEGY_CHANGE last for exactly this reason: emitted alongside
+	// the REPEATED_FAILURE it answers but ordered before it, the change is invisible here
+	// and the metric silently stays null while looking correctly wired.
+	it("ignores a strategy change that precedes the repeat it would answer", () => {
+		const metrics = computeMetrics([
+			transition(1, "STRATEGY_CHANGE", {}, {}, 2),
+			transition(2, "REPEATED_FAILURE", {}, {}, 2),
+		]);
+		expect(metrics.strategyChanges).toBe(1);
+		expect(metrics.turnsToStrategyChange).toBeNull();
+	});
+
 	it("reports null rather than zero when a measure does not apply", () => {
 		// Averaging an absent measurement as zero would drag a condition's mean toward a
 		// value no trial observed.
@@ -411,5 +784,54 @@ describe("analysis", () => {
 	it("reports spread alongside every mean", () => {
 		const summary = summarize([trial("stasis", true, { turns: 2 }), trial("stasis", true, { turns: 20 })]);
 		expect(summary.byCondition[0]!.stdev.turns).toBeGreaterThan(0);
+	});
+
+	// The concrete case: on 2026-08-16 the stasis arm of a three-trial run answered in one
+	// turn with no tool calls, and was scored 0% while contributing zeroes to every mean.
+	// The same response had already occurred in a control arm, so it is provider noise
+	// landing on whichever cell it lands on — the most damaging possible artefact at these
+	// trial counts, because it is indistinguishable from the intervention doing harm.
+	describe("a trial that never attempted the task", () => {
+		const noAttempt = (condition: string) =>
+			trial(condition, false, { turns: 1, toolCalls: 0, toolResults: 0, diffLines: 0, assistantMessages: 1 });
+
+		it("is not counted as a failure of the arm it landed in", () => {
+			const summary = summarize([trial("stasis", true), trial("stasis", true), noAttempt("stasis")]);
+			const stasis = summary.byCondition.find((entry) => entry.condition === "stasis")!;
+			expect(stasis.successRate).toBe(1);
+			expect(stasis.trials).toBe(2);
+			expect(stasis.discarded).toBe(1);
+		});
+
+		it("does not drag the behavioural means toward zero", () => {
+			const scored = summarize([trial("stasis", true), trial("stasis", true)]);
+			const withFlake = summarize([trial("stasis", true), trial("stasis", true), noAttempt("stasis")]);
+			expect(withFlake.byCondition[0]!.mean.toolCalls).toBe(scored.byCondition[0]!.mean.toolCalls);
+			expect(withFlake.byCondition[0]!.mean.turns).toBe(scored.byCondition[0]!.mean.turns);
+		});
+
+		// Judged by the rule rather than by the stored flag, so the studies already on disk
+		// are re-analysed correctly instead of keeping the scores they were given.
+		it("is recognised in results collected before the flag existed", () => {
+			const summary = summarize([noAttempt("stasis")]);
+			expect(summary.totalDiscarded).toBe(1);
+			expect(summary.totalTrials).toBe(0);
+		});
+
+		it("still counts toward what the study cost", () => {
+			expect(summarize([noAttempt("stasis")]).totalCost).toBeGreaterThan(0);
+		});
+
+		it("does not discard a trial that ran out of turns, which is a real outcome", () => {
+			const summary = summarize([trial("stasis", false, { turns: 60, toolCalls: 0, turnCapped: true })]);
+			expect(summary.totalDiscarded).toBe(0);
+			expect(summary.byCondition[0]!.trials).toBe(1);
+		});
+
+		it("reports an arm with no usable trials as unmeasured rather than as a total loss", () => {
+			const report = renderReport(summarize([noAttempt("stasis")]), [noAttempt("stasis")]);
+			expect(report).not.toMatch(/0%/);
+			expect(report).toMatch(/DISCARDED: 1 trial/);
+		});
 	});
 });

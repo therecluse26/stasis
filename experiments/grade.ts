@@ -110,14 +110,20 @@ export function grade(fixture: FixtureDefinition, workdir: string, gradingDir: s
 	const captured = captureDiff(workdir);
 	const timeoutMs = Math.max(60_000, fixture.timeoutSeconds * 1000);
 
-	rmSync(gradingDir, { recursive: true, force: true });
-	mkdirSync(gradingDir, { recursive: true });
-	cpSync(join(fixture.root, "workspace"), gradingDir, { recursive: true });
+	// A git repository, not merely a copy of one. `git apply` resolves a patch's paths
+	// against the root of whatever repository encloses its working directory, and filters
+	// out anything that falls outside the current prefix — so a plain directory nested
+	// inside another repo, which is exactly what a trial dir under `runs/` is, has every
+	// hunk skipped and still exits 0. Owning a `.git` stops that discovery here.
+	prepareWorkspace(fixture, gradingDir);
 
 	if (captured.diff.trim().length > 0) {
 		const patchPath = join(gradingDir, ".agent.patch");
 		writeFileSync(patchPath, captured.diff, "utf8");
-		const applied = run(`git apply --whitespace=nowarn "${patchPath}"`, gradingDir, timeoutMs);
+		// Named relative to the working directory, which is the grading directory itself:
+		// passing the joined path would resolve against it a second time whenever the caller
+		// supplied a relative `gradingDir`.
+		const applied = run(`git apply --whitespace=nowarn ".agent.patch"`, gradingDir, timeoutMs);
 		rmSync(patchPath, { force: true });
 		if (applied.code !== 0) {
 			return {
@@ -126,6 +132,17 @@ export function grade(fixture: FixtureDefinition, workdir: string, gradingDir: s
 				...captured,
 				detail: `could not apply the agent's diff to a clean tree: ${applied.output.slice(0, 500)}`,
 			};
+		}
+		// The exit code is not sufficient on its own: a skipped patch also reports success.
+		// Confirm the tree actually moved. This is a harness invariant rather than a grading
+		// outcome — a diff that changes nothing means grading is about to score the pristine
+		// fixture, which surfaces as the agent failing every task in the study.
+		const dirty = run("git status --porcelain", gradingDir, timeoutMs);
+		if (dirty.output.trim().length === 0) {
+			throw new Error(
+				`the agent's diff applied cleanly but changed nothing in ${gradingDir}. ` +
+					"Grading would have scored the unmodified fixture. This is a harness fault, not a failed fix.",
+			);
 		}
 	}
 

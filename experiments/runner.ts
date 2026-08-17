@@ -171,6 +171,7 @@ function planTrials(benchmark: Benchmark, options: CliOptions, runDir: string, f
 					trial,
 					model: benchmark.model,
 					profile: benchmark.profile,
+					config: benchmark.config,
 					systemPrompt: benchmark.systemPrompt,
 					maxTurns: task.maxTurns ?? benchmark.maxTurns,
 					timeoutSeconds: task.timeoutSeconds ?? benchmark.timeoutSeconds,

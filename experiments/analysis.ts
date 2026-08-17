@@ -16,7 +16,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import type { Condition, TrialMetrics, TrialResult } from "./types.ts";
+import { isNoAttempt, type Condition, type TrialMetrics, type TrialResult } from "./types.ts";
 
 export interface ConditionSummary {
 	condition: Condition;
@@ -28,6 +28,8 @@ export interface ConditionSummary {
 	errors: number;
 	timeouts: number;
 	turnCaps: number;
+	/** Trials that ran but cannot be scored. Excluded from `trials` and from every mean. */
+	discarded: number;
 	mean: Record<string, number>;
 	stdev: Record<string, number>;
 }
@@ -35,8 +37,28 @@ export interface ConditionSummary {
 export interface Summary {
 	byCondition: ConditionSummary[];
 	byTask: Array<{ taskId: string; byCondition: ConditionSummary[] }>;
+	/** Scored trials. Discarded ones are counted separately, never silently dropped. */
 	totalTrials: number;
+	totalDiscarded: number;
 	totalCost: number;
+}
+
+/**
+ * Whether a trial is evidence about the thing being measured.
+ *
+ * Two ways it is not, and both are recorded on the trial rather than inferred here: the
+ * extension never activated, so the arm was not the arm it claims to be; or the agent never
+ * called a tool, so the task was not attempted. Neither is a failed attempt, and averaging
+ * either one in does real damage — a trial with no tool calls contributes a zero to every
+ * behavioural mean and a miss to its arm's success rate, which at five trials per arm is a
+ * twenty-point swing produced by nothing.
+ *
+ * They are excluded from the means and counted in the report, never dropped quietly. A
+ * study whose arms have unequal numbers of usable trials is a study with a problem, and
+ * hiding the imbalance is how it goes unnoticed.
+ */
+export function isScored(result: TrialResult): boolean {
+	return !result.extensionInert && !isNoAttempt(result);
 }
 
 const mean = (values: number[]): number =>
@@ -99,7 +121,8 @@ function numericFields(result: TrialResult): Record<string, number> {
 	return fields;
 }
 
-function summarizeCondition(condition: Condition, results: TrialResult[]): ConditionSummary {
+function summarizeCondition(condition: Condition, all: TrialResult[]): ConditionSummary {
+	const results = all.filter(isScored);
 	const fields = new Map<string, number[]>();
 	for (const result of results) {
 		for (const [key, value] of Object.entries(numericFields(result))) {
@@ -126,6 +149,7 @@ function summarizeCondition(condition: Condition, results: TrialResult[]): Condi
 		errors: results.filter((result) => result.error && !result.success).length,
 		timeouts: results.filter((result) => result.timedOut).length,
 		turnCaps: results.filter((result) => result.turnCapped).length,
+		discarded: all.length - results.length,
 		mean: meanOf,
 		stdev: stdevOf,
 	};
@@ -151,7 +175,10 @@ export function summarize(results: TrialResult[]): Summary {
 				),
 			),
 		})),
-		totalTrials: results.length,
+		totalTrials: results.filter(isScored).length,
+		totalDiscarded: results.filter((result) => !isScored(result)).length,
+		// Every trial, scored or not. A discarded trial still spent money, and a cost line
+		// that quietly omitted it would understate what the study actually cost to run.
 		totalCost: Number(results.reduce((sum, result) => sum + (result.cost ?? 0), 0).toFixed(4)),
 	};
 }
@@ -227,6 +254,10 @@ const PHYSIOLOGY_ROWS = [
 
 function formatCell(summary: ConditionSummary, row: string): string {
 	if (row === "successRate") {
+		// An arm whose every trial was discarded has no success rate. Printing "0% (0/0)"
+		// there states a result that no trial supports, and reads as the worst possible
+		// outcome rather than as absence of evidence.
+		if (summary.trials === 0) return "—";
 		return `${(summary.successRate * 100).toFixed(0)}% (${summary.successes}/${summary.trials})`;
 	}
 	if (row === "visibleOnly") return String(summary.visibleOnly);
@@ -262,7 +293,8 @@ function table(title: string, rows: string[], summaries: ConditionSummary[]): st
 export function renderReport(summary: Summary, results: TrialResult[]): string {
 	const sections: string[] = [""];
 	sections.push("═".repeat(72));
-	sections.push(`RESULTS — ${summary.totalTrials} trials, $${summary.totalCost.toFixed(4)} total`);
+	const discardNote = summary.totalDiscarded > 0 ? `, ${summary.totalDiscarded} discarded` : "";
+	sections.push(`RESULTS — ${summary.totalTrials} trials${discardNote}, $${summary.totalCost.toFixed(4)} total`);
 	sections.push("═".repeat(72));
 
 	sections.push(table("OUTCOMES", OUTCOME_ROWS, summary.byCondition));
@@ -307,6 +339,24 @@ export function renderReport(summary: Summary, results: TrialResult[]): string {
 			"  arms are indistinguishable from the control by construction, so this run does",
 			"  not measure anything. Do not report it.",
 		);
+	}
+	const noAttempt = results.filter(isNoAttempt);
+	if (noAttempt.length > 0) {
+		const byCondition = summary.byCondition
+			.filter((condition) => condition.discarded > 0)
+			.map((condition) => `${condition.condition}: ${condition.discarded}`)
+			.join(", ");
+		notes.push(
+			"",
+			`  DISCARDED: ${noAttempt.length} trial(s) answered without calling a single tool,`,
+			"  leaving the workspace untouched. Not counted as failures and not averaged into",
+			`  anything (${byCondition}). Read transcript.json in those trial directories before`,
+			"  concluding anything about the arm they landed in — this looks the same whether",
+			"  the model replied conversationally or its response was cut off.",
+		);
+		if (summary.byCondition.some((condition) => condition.discarded > 0 && condition.trials < 3)) {
+			notes.push("  One arm now has very few usable trials. Re-run it before comparing arms.");
+		}
 	}
 	const errored = results.filter((result) => result.error && !result.success && !result.timedOut);
 	if (errored.length > 0) {

@@ -41,8 +41,28 @@ export interface BenchmarkModel {
 	 * OpenRouter routes to different upstream providers between requests, which adds
 	 * variance unrelated to the hypothesis. Pinning it is recommended for any study whose
 	 * conclusions depend on comparing arms.
+	 *
+	 * It matters more for an open-weight model than for a first-party one: the same model
+	 * id is served by many providers, at differing quantizations and occasionally with
+	 * differing tokenizers, so the spread between them can exceed the effect being measured.
+	 *
+	 * Passed through verbatim as OpenRouter's `provider` request field.
 	 */
-	routing?: { only?: string[]; order?: string[] };
+	routing?: OpenRouterRouting;
+}
+
+/** The subset of OpenRouter's provider-routing controls a study has reason to pin. */
+export interface OpenRouterRouting {
+	/** Exclusively allow these provider slugs. */
+	only?: string[];
+	/** Try these provider slugs in order, falling back along the list. */
+	order?: string[];
+	/** Skip these provider slugs. */
+	ignore?: string[];
+	/** Restrict to these quantization levels, e.g. `["bf16"]`. */
+	quantizations?: string[];
+	/** Whether a backup provider may serve the request. Set `false` to hold the pin. */
+	allow_fallbacks?: boolean;
 }
 
 export interface BenchmarkTask {
@@ -64,6 +84,17 @@ export interface Benchmark {
 	tasks: BenchmarkTask[];
 	/** Physiological profile for the stasis arm. */
 	profile?: string;
+	/**
+	 * Physiology overrides for this study, applied as the highest-precedence overlay in
+	 * every instrumented arm.
+	 *
+	 * A study is a claim about a specific configuration, so it should be able to state that
+	 * configuration in its own file rather than depending on whatever the shipped defaults
+	 * happen to be. It arrives at the extension as `inline`, so `/stasis config` and the
+	 * telemetry run header both name it as a contributing source and a run stays
+	 * reproducible from its own output.
+	 */
+	config?: unknown;
 	/** Held identical across every condition, so no arm gets extra instruction. */
 	systemPrompt?: string;
 	maxTurns: number;
@@ -109,6 +140,20 @@ export interface TrialResult {
 	 * run rather than be averaged into it.
 	 */
 	extensionInert?: boolean;
+	/**
+	 * The agent answered without calling a single tool.
+	 *
+	 * Not a failed attempt — no attempt. The workspace is untouched, so grading scores the
+	 * shipped bug, and every behavioural metric contributes a zero drawn from a trial that
+	 * never happened. Seen twice in roughly thirty-five live trials against the same
+	 * open-weight endpoint, in two different conditions, which is frequent enough to decide
+	 * an arm at these trial counts. Discarded from summaries and reported separately rather
+	 * than averaged in; `transcript.json` in the trial directory holds what the model
+	 * actually said.
+	 */
+	agentInert?: boolean;
+	/** Set when the transcript could not be written. Diagnostic; never fails the trial. */
+	transcriptError?: string;
 	durationMs: number;
 
 	turns: number;
@@ -129,6 +174,18 @@ export interface TrialResult {
 
 	metrics: TrialMetrics;
 	repro: TrialRepro;
+}
+
+/**
+ * The agent answered without attempting the task.
+ *
+ * Derived rather than read from `agentInert`, so that a results file collected before that
+ * flag existed is judged by the same rule as a fresh one — the stored flag is the record,
+ * this is the definition. A timed-out or turn-capped trial is excluded because those made
+ * an attempt and ran out of room, which is an outcome worth scoring.
+ */
+export function isNoAttempt(result: TrialResult): boolean {
+	return !result.error && result.toolCalls === 0 && !result.timedOut && !result.turnCapped;
 }
 
 /** Metrics derived from the extension's own records, available in every arm but `bare`. */
@@ -198,6 +255,8 @@ export interface TrialRequest {
 	trial: number;
 	model: BenchmarkModel;
 	profile?: string;
+	/** Physiology overrides from the benchmark; see `Benchmark.config`. */
+	config?: unknown;
 	systemPrompt?: string;
 	maxTurns: number;
 	timeoutSeconds: number;

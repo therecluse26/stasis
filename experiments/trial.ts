@@ -26,8 +26,9 @@ import { applyEnvFiles } from "../src/runtime/env-file.ts";
 import { EXTENSION_VERSION } from "../src/version.ts";
 import { createFauxAgent, fauxEnabled } from "./faux-agent.ts";
 import { grade, prepareWorkspace } from "./grade.ts";
+import { applyRouting } from "./model.ts";
 import { computeMetrics, emptyMetrics, readTelemetry, runHeader } from "./metrics.ts";
-import { CONDITION_MODES, type TrialRequest, type TrialResult } from "./types.ts";
+import { CONDITION_MODES, isNoAttempt, type TrialRequest, type TrialResult } from "./types.ts";
 
 /**
  * Instructions shared by every condition.
@@ -117,13 +118,16 @@ async function main(): Promise<void> {
 					cliThinking: request.model.thinkingLevel as never,
 					modelRuntime,
 				});
-		const model = resolved.model;
-		if (!model) {
+		const resolvedModel = resolved.model;
+		if (!resolvedModel) {
 			throw new Error(
 				`could not resolve model ${request.model.provider}/${request.model.model}. ` +
 					`Authenticate first (for OpenRouter: set OPENROUTER_API_KEY or run \`pi\` then \`/login openrouter\`).`,
 			);
 		}
+
+		// Pin the upstream provider, where the study asked for one. See experiments/model.ts.
+		const model = applyRouting(resolvedModel, request.model);
 
 		// Everything below is identical across conditions except `extensionFactories`.
 		const settingsManager = SettingsManager.inMemory({
@@ -158,6 +162,7 @@ async function main(): Promise<void> {
 								factory: createStasisExtension({
 									mode,
 									profile: request.profile,
+									inline: request.config,
 									telemetryDir: telemetryPath,
 									condition: request.condition,
 									trial: request.trial,
@@ -218,6 +223,21 @@ async function main(): Promise<void> {
 			unsubscribe();
 		}
 
+		// The transcript, before anything derived from it.
+		//
+		// `SessionManager.inMemory()` keeps trials from leaking into each other, but it also
+		// means nothing survives the process unless it is written here, and a trial that ends
+		// after one turn with no tool calls is then unfalsifiable: a model that replied
+		// conversationally, one whose response was truncated, and one that never saw the
+		// prompt all look identical in the counters. That has now happened twice in ~35 live
+		// trials, and both times the evidence needed to tell those apart no longer existed.
+		try {
+			writeFileSync(join(request.outputDir, "transcript.json"), `${JSON.stringify(session.messages, null, 2)}\n`, "utf8");
+		} catch (error) {
+			// Diagnostic only. Losing it must not cost the trial.
+			result.transcriptError = (error as Error).message;
+		}
+
 		const stats = session.getSessionStats();
 		result.turns = turns;
 		result.turnCapped = capped;
@@ -260,6 +280,13 @@ async function main(): Promise<void> {
 		result.extensionInert = true;
 		result.error = result.error ?? "extension produced no telemetry: it was loaded but never activated";
 	}
+
+	// An agent that answered without touching the workspace did not attempt the task, and
+	// scoring it as a failed attempt is worse than not scoring it: the trial contributes a
+	// zero to every behavioural mean and a miss to the success rate of whichever arm it
+	// happened to land in. Observed twice in ~35 live trials, in two different conditions,
+	// which is enough to corrupt an arm at the trial counts these studies run.
+	if (isNoAttempt(result)) result.agentInert = true;
 
 	const header = runHeader(records);
 	if (header) {

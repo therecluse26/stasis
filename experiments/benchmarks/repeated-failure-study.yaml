@@ -1,10 +1,14 @@
 # Does persistent physiology change how an agent handles a fix that does not work?
 #
-# Three tasks chosen to discriminate rather than to flatter:
+# Tasks chosen to discriminate rather than to flatter:
 #
-#   bug-001  the first plausible hypothesis is wrong; rewards revising rather than retrying
+#   bug-001  a fix at the call site passes the visible tests and leaves the contract broken
 #   bug-002  a narrow bug inside a working function; rewards a small change over a rewrite
 #   bug-003  trivially fixable; neuromodulation should not help, and any cost shows here
+#   bug-004  every obvious repair is wrong; a hard problem, but solved in one edit by a model
+#            that knows the answer, so it did not produce the loop it was built for
+#   bug-005  the agent's edits land outside the code path the test imports, so the failure
+#            repeats identically whatever it writes. The one that does produce the loop.
 #
 # Conditions:
 #
@@ -28,18 +32,48 @@ timeoutSeconds: 900
 
 model:
   provider: openrouter
-  model: anthropic/claude-sonnet-4.5
-  thinkingLevel: medium
-  # OpenRouter routes to different upstream providers between requests. Left unpinned the
-  # variance lands on the comparison; pin it for any study whose conclusions depend on
-  # small differences between arms.
-  # routing:
-  #   only: [anthropic]
+  model: qwen/qwen3-coder-30b-a3b-instruct
+  # An open-weight model, for two reasons. Cost: a full study here is cents rather than
+  # dollars, and a study too expensive to re-run is one that stops being run. Permanence:
+  # the weights are a fixed artifact, so this study can be repeated in a year and be the
+  # same instrument, which is not true of a hosted model that is retired or re-tuned
+  # underneath it.
+  #
+  # Pinned, because on OpenRouter a model id does not identify what actually runs. This one
+  # is served by five providers at two different quantizations and a 6x spread in price;
+  # glm-4.7 spans fp4 to fp16, and one of its providers does not support tool calls at all.
+  # Unpinned, that variance lands on the comparison between arms instead of cancelling out.
+  #
+  # Check the endpoint's context window before changing this pin. It is a property of the
+  # endpoint, not of the model: novita serves the same id with a 160k window, and the SDK
+  # sizes requests from the model catalog's 262k, so pinning there fails every trial with a
+  # 400 before the agent takes a turn.
+  routing:
+    only: [siliconflow]
+    quantizations: [fp8]
+    allow_fallbacks: false
+  # No thinkingLevel: this is a non-thinking instruct model, and setting one would thread a
+  # value through the session and into every result record that nothing honours.
 
 profile: balanced
 
+# Physiology overrides for this study only; the shipped default is unchanged, so an
+# interactive `pi` session is unaffected.
+config:
+  enforcement:
+    # Pi has no sandbox, so an edit limit is only as real as the shell is closed. The
+    # 2026-08-16 run recorded nine genuine filesystem mutations through bash, three of
+    # which — a full-file `cat > f << EOF` rewrite, a `sed -i` and a `perl -i` — would have
+    # defeated the patch limit outright had it ever been tight enough to bind. Left off,
+    # this study measures enforcement with the back door open.
+    #
+    # Worth knowing when comparing against the two runs already in `runs/`: those were
+    # log-only, so bypass rate there is observational and here it is partly suppressed.
+    guardBash: true
+
 conditions:
   - control
+  - static
   - stasis
 
 tasks:
@@ -51,3 +85,9 @@ tasks:
 
   - id: bug-003-easy-control
     fixture: ../fixtures/bug-003-easy-control
+
+  - id: bug-004-sustained-failure
+    fixture: ../fixtures/bug-004-sustained-failure
+
+  - id: bug-005-invisible-edit
+    fixture: ../fixtures/bug-005-invisible-edit

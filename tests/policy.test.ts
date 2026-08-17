@@ -59,6 +59,13 @@ describe("policy derivation", () => {
 	it("gives every field a usable dynamic range across the state space", () => {
 		// Each field must actually move between the extremes of state space, or the
 		// coefficient set has neutralized it.
+		//
+		// These are corners of the state *cube*, not states the engine can produce —
+		// reaching stress 1 always drives confidence to 0, so `high` and `mixed` below
+		// never occur in a session. That is the correct scope for testing a linear map, but
+		// it means passing here says nothing about whether the policy ever moves in
+		// practice. tests/reachability.test.ts asks that second question, and the gap
+		// between the two is how an enforcement mechanism that never fired stayed green.
 		const low = { stress: 0, confidence: 0, noveltyDrive: 0, fatigue: 0, persistence: 0 };
 		const high = { stress: 1, confidence: 1, noveltyDrive: 1, fatigue: 1, persistence: 1 };
 		const mixed = { stress: 1, confidence: 0, noveltyDrive: 1, fatigue: 0, persistence: 0 };

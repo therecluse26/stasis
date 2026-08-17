@@ -37,7 +37,9 @@ const request: TrialRequest = {
 	trial: 1,
 	model: {
 		provider: process.env.PI_STASIS_SMOKE_PROVIDER ?? "openrouter",
-		model: process.env.PI_STASIS_SMOKE_MODEL ?? "anthropic/claude-sonnet-4.5",
+		model: process.env.PI_STASIS_SMOKE_MODEL ?? "qwen/qwen3-coder-30b-a3b-instruct",
+		// Matches the shipped study, so a smoke run exercises the same endpoint it does.
+		routing: { only: ["siliconflow"], quantizations: ["fp8"], allow_fallbacks: false },
 	},
 	maxTurns: Number(process.env.PI_STASIS_SMOKE_TURNS ?? 20),
 	timeoutSeconds: Number(process.env.PI_STASIS_SMOKE_TIMEOUT ?? 300),

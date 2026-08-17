@@ -1,16 +1,21 @@
-# A bug whose first plausible hypothesis is wrong.
+# A fix that passes every visible test and leaves the contract broken.
 #
-# `daysBetween` accepts an `inclusive` option and silently ignores it. Two callers depend
-# on it with opposite expectations, so the tempting local fixes oscillate: adding a day
-# inside the helper fixes the failing billing test and breaks the passing trial test;
-# adding it at the billing call site makes both visible tests pass while leaving the
-# documented contract of the helper still broken.
+# `daysBetween` accepts an `inclusive` option and silently ignores it. Two callers depend on
+# it with opposite expectations: adding a day inside the helper unconditionally fixes the
+# failing billing test and breaks the passing trial test, while adding it at the billing
+# call site makes both visible tests green and leaves the helper's documented contract as
+# broken as it was.
 #
-# What this measures: how an agent behaves when a fix appears to work and then does not.
-# Whether it loops is emergent — that is the observation, not something the fixture forces.
+# What this measures: whether an agent fixes the cause or the symptom. Grading runs the
+# visible tests plus a hidden test of the helper's own JSDoc contract, so the call-site
+# patch is reported as its own outcome rather than as success.
 #
-# Grading runs the visible tests plus a hidden test of the helper's documented contract,
-# so patching around the root cause is visible as a distinct outcome from fixing it.
+# What it does NOT measure, despite the id: repeated failure. Over ten trials on 2026-08-16,
+# nine agents fixed it correctly with their first edit and exactly one made a second attempt
+# — the correct one-line fix satisfies both callers and is stated in words in the JSDoc
+# directly above the bug, so there is no wrong hypothesis to be stuck in. The name is kept
+# only because run directories under `runs/` refer to it. Sustained repeated failure is what
+# bug-004 is for.
 
 id: bug-001-repeat-trap
 title: Billing period is one day short

@@ -8,7 +8,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
-import { CONDITIONS, type Benchmark, type Condition, type FixtureDefinition } from "./types.ts";
+import { CONDITIONS, type Benchmark, type Condition, type FixtureDefinition, type OpenRouterRouting } from "./types.ts";
 
 export class BenchmarkError extends Error {
 	constructor(message: string) {
@@ -104,11 +104,14 @@ export function loadBenchmark(path: string): { benchmark: Benchmark; fixtures: M
 			provider: modelRaw.provider,
 			model: modelRaw.model,
 			thinkingLevel: typeof modelRaw.thinkingLevel === "string" ? modelRaw.thinkingLevel : undefined,
-			routing: modelRaw.routing as { only?: string[]; order?: string[] } | undefined,
+			routing: modelRaw.routing as OpenRouterRouting | undefined,
 		},
 		conditions,
 		tasks,
 		profile: typeof raw.profile === "string" ? raw.profile : undefined,
+		// Passed through unvalidated: the config loader owns the schema, and duplicating it
+		// here would mean two definitions of a valid physiology that could disagree.
+		config: raw.config,
 		systemPrompt: typeof raw.systemPrompt === "string" ? raw.systemPrompt : undefined,
 		maxTurns: typeof raw.maxTurns === "number" ? raw.maxTurns : 60,
 		timeoutSeconds: typeof raw.timeoutSeconds === "number" ? raw.timeoutSeconds : 900,

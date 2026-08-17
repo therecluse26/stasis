@@ -68,7 +68,12 @@ const SIGNAL_PATTERNS: RegExp[] = [
 	/\bexception\b/i,
 	/\bpanic:/i,
 	/\btraceback\b/i,
-	/^\s*[✕✗×]/,
+	// U+2716 first, because that is the one Node's test reporter actually emits and it was
+	// missing: without it no `✖ <test name>` line is ever a signal line, so the identity of
+	// the failing test never reaches the hash. Two entirely different bugs in two different
+	// fixtures collided on `8352abab6360` as a result, and — worse — a *different* test
+	// beginning to fail read as the same failure repeating.
+	/^\s*[✖✕✗×]/,
 	/\bTS\d{4}\b/,
 	/\berror\[E\d+\]/,
 	/\bcannot\b/i,
@@ -80,10 +85,31 @@ const SIGNAL_PATTERNS: RegExp[] = [
 const NOISE_LINE = /^\s*(at\s|\s*\.\.\.|npm ERR!\s*$|\s*$)/;
 
 /**
+ * Lines that match a signal pattern while carrying no diagnosis.
+ *
+ * Test runners frame their output with tallies and section headings, and those match the
+ * signal patterns as readily as a real diagnosis does — `ℹ fail 1` contains "fail", and
+ * `✖ failing tests:` contains both a bullet and "failing". Being framing, they are also
+ * *constant* across every failure of the same suite, so with only a few lines kept they
+ * crowded the actual assertion out of the fingerprint entirely.
+ *
+ * The consequence was not subtle. Every failure of a one-test suite hashed identically no
+ * matter how it failed, so an agent whose change moved the failure from one assertion to a
+ * later one — real progress, the thing the physiology most needs to distinguish — was
+ * appraised as repeating itself, and had persistence drained for it.
+ */
+const FRAMING_LINE = /^(ℹ\s|[✖✕✗×]\s*(failing tests|tests):?$|(pass|fail|tests|suites|todo|skipped|cancelled)\s+\d+$)/i;
+
+/**
  * Reduce raw failure output to the few lines that identify it.
  *
  * Prefers lines that look like a diagnosis; falls back to the first non-empty lines when
  * nothing matches, so an unrecognized tool still produces a stable fingerprint.
+ *
+ * Duplicates are dropped rather than counted: Node's reporter prints the failing test's
+ * name once in the progress stream and again in the failure summary, and two slots spent
+ * on the same line are two slots not spent on what distinguishes this failure from the
+ * last one.
  */
 export function extractErrorSignal(text: string, maxLines: number): string {
 	const lines = stripNoise(text)
@@ -91,8 +117,10 @@ export function extractErrorSignal(text: string, maxLines: number): string {
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0 && !NOISE_LINE.test(line));
 
-	const signal = lines.filter((line) => SIGNAL_PATTERNS.some((pattern) => pattern.test(line)));
-	const chosen = (signal.length > 0 ? signal : lines).slice(0, maxLines);
+	const signal = lines.filter(
+		(line) => !FRAMING_LINE.test(line) && SIGNAL_PATTERNS.some((pattern) => pattern.test(line)),
+	);
+	const chosen = [...new Set(signal.length > 0 ? signal : lines)].slice(0, maxLines);
 	return chosen.join(" | ").toLowerCase().slice(0, 600);
 }
 

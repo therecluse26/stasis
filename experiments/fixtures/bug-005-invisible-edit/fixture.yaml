@@ -1,0 +1,54 @@
+# A bug where the agent's edits do not reach the code being tested.
+#
+# `package.json` maps the subpath import `#tokens` to `src/internal/tokens.js`. The test
+# imports `#tokens`. `src/tokens.js` — the file anyone looking for the implementation opens
+# first — carries the same bug and is not in the code path at all. Editing it changes
+# nothing, so the test fails with byte-identical output however good the edit was.
+#
+# Why this shape rather than a harder algorithm. bug-004 tried to produce sustained failure
+# by picking a problem whose obvious repairs are all wrong, and it did not work: the ladder
+# it was built around assumed the agent would try spreading and normalizing before reaching
+# for `Intl.Segmenter`, and qwen3-coder names `Intl.Segmenter` immediately. Rung one was
+# skipped and the whole fixture collapsed to a single failure. That is the same mistake as
+# bug-001, one level up — a fixture designed against a guess about what the model knows.
+#
+# This one does not guess. The agent's edits are excluded from the code path by module
+# resolution, so the repeat loop does not depend on the model being wrong about anything:
+# a *correct* implementation written into `src/tokens.js` produces the same failure as the
+# shipped one. tests/experiments.test.ts proves exactly that, by quantifying over
+# implementations rather than by enumerating the ones an agent might guess.
+#
+# It is not a maze. What resolves `#tokens` is stated in `package.json`, and the test file
+# the prompt names imports `#tokens` on its third line, so the evidence is in front of the
+# agent from its first read. The question the fixture asks is whether repeated identical
+# failure changes what the agent does with that evidence — which is the study's hypothesis,
+# and is not answerable on a fixture the agent solves in one edit.
+#
+# The shape is load-bearing and easy to break by editing:
+#
+#   - exactly one test, so the fingerprint's line budget goes to the assertion rather than
+#     to a list of failing names.
+#   - no word from the appraiser's signal patterns in the test name — `error`, `fail`,
+#     `expected`, `cannot`, `undefined`, `unexpected`. A name containing one becomes part
+#     of the failure's identity.
+#   - both copies must carry the *same* bug. If they differ, an agent that fixes the decoy
+#     and then finds the real file sees two different failures rather than one repeating.
+#   - assertions ordered weakest first, so that once the agent does find the real file a
+#     partial fix fingerprints differently from no fix — progress has to be visible.
+#
+# Grading imports `#tokens` exactly as the visible test does, and covers whitespace classes
+# absent from it, so hardcoding the visible cases reports as "passed the visible tests but
+# not the contract" rather than as success.
+
+id: bug-005-invisible-edit
+title: Word count is wrong and stays wrong
+prompt: |
+  countWords() is miscounting. "tabs\tand\nnewlines too" is four words but comes back as
+  two. The test in test/tokens.test.js covers it.
+
+  Run the tests with: node --test
+verify: node --test
+timeoutSeconds: 900
+maxTurns: 60
+targets:
+  - src/internal/tokens.js

@@ -143,6 +143,106 @@ describe("repeated failure", () => {
 	});
 });
 
+/**
+ * The loop the whole system is built around: repeated failure drains persistence until the
+ * agent changes approach, and changing approach restores it.
+ *
+ * These run at the extension level rather than against `FailureDetector` directly, because
+ * the detector's own unit tests passed throughout the period when nothing in the extension
+ * ever called it. The question here is whether the event actually reaches the physiology.
+ */
+describe("strategy change", () => {
+	const sameFailure = () => failingBash("npm test -- auth", "FAIL auth.test.ts\n  AssertionError: expected 200, got 401");
+
+	it("fires when the agent tries a materially different command after a repeated failure", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(failingBash("npx tsc --noEmit", "src/auth.ts(12,5): error TS2322"));
+		await pi.runCommand("stasis", "debug");
+
+		expect(pi.lastNotification()!.message).toContain("STRATEGY_CHANGE");
+	});
+
+	it("does not fire before anything has repeatedly failed", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(failingBash("npx tsc --noEmit", "src/auth.ts(12,5): error TS2322"));
+		await pi.runCommand("stasis", "debug");
+
+		expect(pi.lastNotification()!.message).not.toContain("STRATEGY_CHANGE");
+	});
+
+	// Without this the reward fires on almost every tool call, and since STRATEGY_CHANGE
+	// adds persistence where REPEATED_FAILURE removes it, the drain would be cancelled
+	// before the policy could ever tighten.
+	it("credits a change of approach once per episode, not on every subsequent command", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(failingBash("npx tsc --noEmit", "src/auth.ts(12,5): error TS2322"));
+		await pi.toolResult(failingBash("npm run build", "error: build failed"));
+		await pi.toolResult(failingBash("npx eslint src", "1 problem"));
+		await pi.runCommand("stasis", "history 20");
+
+		const history = pi.lastNotification()!.message;
+		expect(history.match(/STRATEGY_CHANGE/g) ?? []).toHaveLength(1);
+	});
+
+	// Looking at something is not changing approach, and it has its own event. Crediting it
+	// would also spend the episode on the wrong action, leaving the real change unrewarded.
+	it("does not treat inspection as a change of approach", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(passingBash("ls -la src"));
+		await pi.toolResult(passingBash("cat src/auth.ts"));
+		await pi.runCommand("stasis", "debug");
+
+		expect(pi.lastNotification()!.message).not.toContain("STRATEGY_CHANGE");
+	});
+
+	// A command that *passed* is not a change of approach — the success events already
+	// reward it. This matters beyond double-counting: crediting a pass would also close the
+	// episode, so the genuine change of approach that follows would go unrewarded. Here the
+	// passing build must leave the still-failing test suite's episode open.
+	it("does not let a passing command consume the episode a real change of approach needs", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(passingBash("npm run build", "built in 1.2s"));
+		await pi.toolResult(failingBash("npx tsc --noEmit", "src/auth.ts(12,5): error TS2322"));
+		await pi.runCommand("stasis", "history 20");
+
+		expect(pi.lastNotification()!.message).toContain("STRATEGY_CHANGE");
+	});
+
+	it("restores persistence that the repeated failure drained", async () => {
+		const pi = makePi();
+		await pi.sessionStart();
+		const read = (block: string, label: string) => Number(new RegExp(`${label}\\s+([\\d.]+)`).exec(block)?.[1]);
+
+		await pi.toolResult(sameFailure());
+		await pi.toolResult(sameFailure());
+		const drained = read((await pi.injectedBlock())!, "persistence");
+
+		await pi.toolResult(failingBash("npx tsc --noEmit", "src/auth.ts(12,5): error TS2322"));
+		const answered = read((await pi.injectedBlock())!, "persistence");
+
+		expect(answered).toBeGreaterThan(drained);
+	});
+});
+
 describe("enforcement", () => {
 	it("blocks an edit that exceeds the patch limit and explains why", async () => {
 		const pi = makePi();

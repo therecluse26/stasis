@@ -108,35 +108,73 @@ export function createAppraiser(config: StasisConfig, detector = new FailureDete
 
 		const attempt = fingerprintAttempt("bash", command);
 
-		if (!verdict.failed) {
-			detector.observeSuccess(kind);
-			events.push(
-				appraisedEvent({
-					type: outcomeEventType(kind, false),
-					severity: 0.5,
-					evidence: {
-						source: "tool_result",
-						toolName: "bash",
-						toolCallId: outcome.toolCallId,
-						command,
-						commandKind: kind,
-						exitCode: 0,
-						fingerprint: attempt.hash,
-						truncated,
-					},
-				}),
-			);
-			return { events, ...(bypassCheck.suspected ? { bypass: { constructs: bypassCheck.constructs, command } } : {}) };
-		}
-
 		// A command the harness refused never ran. It is not evidence about the code, so it
 		// must not enter the failure window: counting it would let enforcement manufacture
-		// the repeated failures that justify more enforcement.
+		// the repeated failures that justify more enforcement. Nor is it a change of
+		// approach — the agent proposed one, and the harness declined to let it happen.
 		if (verdict.kind === "blocked") {
 			return { events, ...(bypassCheck.suspected ? { bypass: { constructs: bypassCheck.constructs, command } } : {}) };
 		}
 
 		const files = extractMentionedFiles(outcome.text);
+
+		// Asked *before* the detector is updated below, and not after. `observeSuccess` and
+		// `observeFailure` both overwrite the very fields the comparison reads, so the same
+		// question put afterwards compares this attempt against itself, finds the files
+		// already known, and can only ever answer "no" — while looking correctly wired.
+		//
+		// Bash only. On the mutation path every edit would read as a change of kind, but
+		// editing a file is the ordinary response to a failure, not a change of approach;
+		// what the agent *runs* is where a change of approach actually shows.
+		//
+		// Failing commands only, too. A change of approach is a claim about an unsolved
+		// problem: if the new approach works, TEST_SUCCESS already rewards it and the
+		// episode closes on its own. Crediting a passing command as well would double-reward
+		// it, and `newTerritory` fires on any file named in output that was not named
+		// before — which passing test output routinely is — so the metric would inflate
+		// exactly in the trials that succeeded.
+		const strategyChanged = verdict.failed && detector.creditStrategyChange(attempt.hash, kind, files);
+		const strategyChangeEvent = () =>
+			appraisedEvent({
+				type: "STRATEGY_CHANGE" as const,
+				severity: 0.5,
+				novelty: 0.7,
+				evidence: {
+					source: "tool_result" as const,
+					toolName: "bash",
+					toolCallId: outcome.toolCallId,
+					command,
+					commandKind: kind,
+					files,
+					detail: "different approach after a repeated failure",
+				},
+			});
+
+		if (!verdict.failed) {
+			detector.observeSuccess(kind);
+			// A shell command that wrote a file yields no event: see `outcomeEventType`.
+			const successType = outcomeEventType(kind, false);
+			if (successType) {
+				events.push(
+					appraisedEvent({
+						type: successType,
+						severity: 0.5,
+						evidence: {
+							source: "tool_result",
+							toolName: "bash",
+							toolCallId: outcome.toolCallId,
+							command,
+							commandKind: kind,
+							exitCode: 0,
+							fingerprint: attempt.hash,
+							truncated,
+						},
+					}),
+				);
+			}
+			return { events, ...(bypassCheck.suspected ? { bypass: { constructs: bypassCheck.constructs, command } } : {}) };
+		}
+
 		const fingerprint = fingerprintFailure({
 			toolName: "bash",
 			command,
@@ -203,6 +241,12 @@ export function createAppraiser(config: StasisConfig, detector = new FailureDete
 				}),
 			);
 		}
+
+		// Last, so its step number lands after any REPEATED_FAILURE from the same result.
+		// `turnsToStrategyChange` in experiments/metrics.ts measures from the first repeat
+		// forward and only counts a change with a strictly greater step; emitted earlier,
+		// the metric would silently stay null.
+		if (strategyChanged) events.push(strategyChangeEvent());
 
 		return { events, ...(bypassCheck.suspected ? { bypass: { constructs: bypassCheck.constructs, command } } : {}) };
 	}

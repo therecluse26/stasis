@@ -57,9 +57,23 @@ function textOf(content: ToolResultEvent["content"]): string {
 		.trim();
 }
 
-function gitCommit(cwd: string): string | undefined {
+/**
+ * Which build of Stasis produced these records.
+ *
+ * Deliberately this repository and not `ctx.cwd`. Under a study the working directory is a
+ * throwaway fixture workspace that `prepareWorkspace` has just `git init`-ed and committed,
+ * so reading the commit there recorded a different, meaningless SHA for every trial —
+ * alarming to look at and useless to reproduce from. Alongside `extensionVersion`,
+ * `piVersion` and `configHash`, the only useful reading of this field is provenance of the
+ * instrument, which is what it now reports in a study and in an ordinary session alike.
+ */
+function gitCommit(): string | undefined {
 	try {
-		return execFileSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+		return execFileSync("git", ["rev-parse", "HEAD"], {
+			cwd: PACKAGE_ROOT,
+			encoding: "utf8",
+			stdio: ["ignore", "pipe", "ignore"],
+		}).trim();
 	} catch {
 		return undefined;
 	}
@@ -215,8 +229,16 @@ export function createStasisExtension(options: StasisExtensionOptions = {}) {
 				const restored = runtime.restore(findLatestSnapshot(ctx.sessionManager));
 				runtime.recordRunHeader({
 					piVersion: piVersion(),
-					gitCommit: gitCommit(ctx.cwd),
-					model: ctx.model ? { provider: ctx.model.provider, id: ctx.model.id } : undefined,
+					gitCommit: gitCommit(),
+					model: ctx.model
+						? {
+								provider: ctx.model.provider,
+								id: ctx.model.id,
+								thinkingLevel: ctx.thinkingLevel,
+								// Set when a study pinned the upstream provider. See experiments/model.ts.
+								routing: (ctx.model.compat as { openRouterRouting?: unknown } | undefined)?.openRouterRouting,
+							}
+						: undefined,
 					condition: options.condition,
 					trial: options.trial,
 					task: options.task,

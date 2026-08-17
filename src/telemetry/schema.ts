@@ -46,7 +46,13 @@ export interface RunHeaderRecord extends RecordBase {
 	config: StasisConfig;
 	initialState: StasisState;
 	initialPolicy: PolicySnapshot;
-	model?: { provider?: string; id?: string; thinkingLevel?: string };
+	/**
+	 * What actually served the session. `routing` matters for aggregators like OpenRouter,
+	 * where the model id alone does not identify what ran: the same id is served by several
+	 * providers at differing quantizations. A run that cannot say which one it reached is not
+	 * reproducible from its own telemetry.
+	 */
+	model?: { provider?: string; id?: string; thinkingLevel?: string; routing?: unknown };
 	cwd?: string;
 	condition?: string;
 	trial?: number;

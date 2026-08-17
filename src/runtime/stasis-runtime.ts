@@ -178,7 +178,7 @@ export class StasisRuntime {
 	recordRunHeader(context: {
 		piVersion?: string;
 		gitCommit?: string;
-		model?: { provider?: string; id?: string; thinkingLevel?: string };
+		model?: RunHeaderRecord["model"];
 		condition?: string;
 		trial?: number;
 		task?: string;
@@ -418,18 +418,6 @@ export class StasisRuntime {
 		}
 
 		return decision;
-	}
-
-	/** Note a change of approach detected from the agent's own actions. */
-	noteStrategyChange(detail: string): TransitionRecord {
-		return this.applyEvent(
-			appraisedEvent({
-				type: "STRATEGY_CHANGE",
-				severity: 0.5,
-				novelty: 0.7,
-				evidence: { source: "turn", detail },
-			}),
-		);
 	}
 
 	/**

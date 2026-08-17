@@ -1,0 +1,60 @@
+# A bug the obvious fixes do not fix.
+#
+# `visibleLength` must count characters the way a reader counts them. The shipped
+# `s.length` counts UTF-16 code units, and every plausible repair is wrong in a different
+# way: spreading the string fixes surrogate pairs but not combining marks, normalizing
+# fixes combining marks but not emoji modifiers, and neither touches zero-width joiners.
+# Only `Intl.Segmenter` is right, and nothing in the source names it.
+#
+# It was built to produce the repeated-failure loop the other three never did, and it does
+# not. Kept, and kept honest, because both ways it failed are worth having recorded.
+#
+# First, the ladder was a guess about what a model would try, and the guess was wrong.
+# qwen3-coder names `Intl.Segmenter` in its first response, so rung one is never reached: on
+# 2026-08-16 the control arm patched the file correctly before running the tests even once,
+# and the whole fixture yielded a single test failure across three arms. Designing a fixture
+# against an assumed model is the same mistake as bug-001, one level up.
+#
+# Second, the property this file claimed — that the first three repairs are indistinguishable
+# to the appraiser — was true only because the fingerprint could not see an assertion. The
+# reporter's `ℹ fail 1` and `✖ failing tests:` lines matched the signal patterns and filled
+# the three-line budget, so every failure of a one-test suite hashed alike. With that fixed,
+# the ladder resolves into two failures rather than one: spreading a string is no progress on
+# a combining mark, and normalizing genuinely is.
+#
+# What it does measure, and does well: whether an agent's repairs address the failure in
+# front of it or a different problem it recognizes. bug-005 is the one that produces
+# sustained identical failure, and it does so by construction rather than by prediction.
+#
+# The shape is still load-bearing:
+#
+#   - exactly one test, so the signal budget goes to the assertion rather than to a list of
+#     names. (Not, as this file used to say, to keep `ℹ fail 1` constant — tallies are no
+#     longer part of a fingerprint at all.)
+#   - assertions ordered weakest case first, so each repair gets further before failing, and
+#     progress reads as a different failure rather than the same one.
+#   - no word from the appraiser's signal patterns in the test name — `error`, `fail`,
+#     `expected`, `cannot`, `undefined`, `unexpected`. A name containing one becomes part of
+#     the failure's identity.
+#
+# tests/experiments.test.ts walks the whole ladder and asserts exactly where it splits, so
+# the split moving fails loudly rather than rotting.
+#
+# Grading additionally checks grapheme classes absent from the visible test, so hardcoding
+# the four visible cases shows up as "passed the visible tests but not the contract".
+
+id: bug-004-sustained-failure
+title: Text width counts code units rather than characters
+# The id overstates what it delivers, and is kept because run directories under `runs/`
+# refer to it. The same courtesy bug-001 gets, for the same reason.
+prompt: |
+  visibleLength() in src/width.js is wrong: it reports the number of characters a reader
+  would see, but for accented text and emoji it returns too many. The test in
+  test/width.test.js shows it.
+
+  Run the tests with: node --test
+verify: node --test
+timeoutSeconds: 900
+maxTurns: 60
+targets:
+  - src/width.js

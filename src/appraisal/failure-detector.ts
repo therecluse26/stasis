@@ -44,7 +44,20 @@ export interface FailureDetectorSnapshot {
 	lastAttemptFingerprint?: string;
 	lastCommandKind?: CommandKind;
 	strategyEpoch: number;
+	repeatUnanswered?: boolean;
 }
+
+/**
+ * Command families that carry a verdict about the code, and so can constitute a change of
+ * approach.
+ *
+ * Inspection is pointedly not among them. Listing a directory between two identical test
+ * runs satisfies the structural test — it is a different command family — but it is not a
+ * change of approach, it is looking. Crediting it is worse than crediting nothing: it
+ * spends the episode on the wrong action, leaving the real change of approach that follows
+ * with no reward at all. Information-gathering already has its own event, INSPECTION.
+ */
+const VERDICT_KINDS = new Set<CommandKind>(["test", "build", "typecheck", "lint"]);
 
 /**
  * Tracks recent failures and the edits between them.
@@ -61,6 +74,14 @@ export class FailureDetector {
 	private lastCommandKind: CommandKind | undefined;
 	/** Increments whenever a materially different approach is detected. */
 	private strategyEpoch = 0;
+	/**
+	 * A repeated failure the agent has not yet answered by changing approach.
+	 *
+	 * Opens on a repeated failure, closes when the failing command family finally passes
+	 * or when a change of approach is credited against it. Gating on this is what stops
+	 * STRATEGY_CHANGE from firing continuously; see `creditStrategyChange`.
+	 */
+	private repeatUnanswered = false;
 
 	constructor(private readonly config: AppraisalConfig) {}
 
@@ -103,7 +124,10 @@ export class FailureDetector {
 		const saturation = Math.max(this.config.repeatSaturation, threshold + 1);
 		const severity = count < threshold ? 0 : clamp01((count - threshold) / (saturation - threshold));
 
-		return { count, repeated: count >= threshold, severity, assumptionInvalidated, changedSince };
+		const repeated = count >= threshold;
+		if (repeated) this.repeatUnanswered = true;
+
+		return { count, repeated, severity, assumptionInvalidated, changedSince };
 	}
 
 	/** Clear the window after a success, so an old failure cannot haunt a fixed problem. */
@@ -111,6 +135,10 @@ export class FailureDetector {
 		this.records = this.records.filter((record) => record.kind !== kind);
 		this.editedFiles.clear();
 		if (this.lastCommandKind === kind) this.lastFailureFingerprint = undefined;
+		// The episode is only over once nothing is still failing. Judged on the window
+		// rather than on this one success, because a passing `ls` says nothing about a
+		// failing test suite.
+		if (this.records.length === 0) this.repeatUnanswered = false;
 	}
 
 	/** How many times this exact failure appears in the window. */
@@ -152,6 +180,29 @@ export class FailureDetector {
 		return changed;
 	}
 
+	/**
+	 * Should a change of approach be credited to the physiology right now?
+	 *
+	 * The structural test above is far too eager to drive an event on its own: any command
+	 * from another family satisfies `differentKind`, so after one failing `npm test` an
+	 * intervening `ls` scores as a change of approach, and so does the next `npm test`.
+	 * That matters because STRATEGY_CHANGE adds persistence (+0.10) while REPEATED_FAILURE
+	 * removes it (−0.15) — ungated, the reward cancels the drain within two tool calls, the
+	 * policy never tightens, and the loop this whole system exists to observe is neutralized
+	 * by its own reward signal.
+	 *
+	 * So a change is credited only when it answers an outstanding repeated failure, and only
+	 * once per episode. That is also the design's own claim: repeated failure drains
+	 * persistence until the agent changes approach, and changing approach restores it.
+	 */
+	creditStrategyChange(attempt: string, kind: CommandKind, files: string[]): boolean {
+		if (!this.repeatUnanswered) return false;
+		if (!VERDICT_KINDS.has(kind)) return false;
+		if (!this.detectStrategyChange(attempt, kind, files)) return false;
+		this.repeatUnanswered = false;
+		return true;
+	}
+
 	snapshot(): FailureDetectorSnapshot {
 		return {
 			records: this.records.map((record) => ({ ...record, files: [...record.files] })),
@@ -160,6 +211,7 @@ export class FailureDetector {
 			lastAttemptFingerprint: this.lastAttemptFingerprint,
 			lastCommandKind: this.lastCommandKind,
 			strategyEpoch: this.strategyEpoch,
+			repeatUnanswered: this.repeatUnanswered,
 		};
 	}
 
@@ -171,6 +223,7 @@ export class FailureDetector {
 		this.lastAttemptFingerprint = snapshot.lastAttemptFingerprint;
 		this.lastCommandKind = snapshot.lastCommandKind;
 		this.strategyEpoch = snapshot.strategyEpoch ?? 0;
+		this.repeatUnanswered = snapshot.repeatUnanswered ?? false;
 	}
 
 	reset(): void {
@@ -180,5 +233,6 @@ export class FailureDetector {
 		this.lastAttemptFingerprint = undefined;
 		this.lastCommandKind = undefined;
 		this.strategyEpoch = 0;
+		this.repeatUnanswered = false;
 	}
 }

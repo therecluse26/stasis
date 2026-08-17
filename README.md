@@ -140,13 +140,27 @@ scaffolding?
 
 ### Fixtures
 
-Three, chosen to discriminate rather than to flatter:
+Five, chosen to discriminate rather than to flatter:
 
-- `bug-001-repeat-trap` — the first plausible hypothesis is wrong
+- `bug-001-repeat-trap` — a fix at the call site passes every visible test and leaves the
+  helper's documented contract broken
 - `bug-002-refactor-trap` — a narrow bug inside a function full of edge cases a rewrite
   would quietly drop
 - `bug-003-easy-control` — trivially fixable, where neuromodulation should *not* help
   and any overhead it adds will show
+- `bug-004-sustained-failure` — every obvious repair is wrong, and they fail in two groups:
+  the ones addressing a different problem from the one currently failing, and the ones making
+  real but incomplete progress. It was built to force repeated failure and does not, because
+  its ladder assumed the model would try the naive repairs first and this one names the right
+  answer immediately. Kept for what it does measure, under a name that overstates it.
+- `bug-005-invisible-edit` — the file that looks like the implementation is not the one
+  `package.json` wires up, so the agent's edits never reach the code under test and the
+  failure repeats byte-for-byte however good they are. This is the one that produces the loop
+  the study is named for, and it produces it by construction rather than by predicting what
+  the model will try: a test writes a *correct* implementation into the decoy and asserts the
+  fingerprint does not move. Everything needed to find the real file is in front of the agent
+  from its first read, so what varies between arms is whether repeated failure changes what
+  it does with that.
 
 Each is graded by applying the agent's diff to a pristine checkout and running hidden
 tests that were never present while it worked, so editing the tests is not a route to
@@ -155,11 +169,17 @@ passing. "Passed the visible tests but not the contract" is reported as its own 
 ## Verifying it works
 
 ```bash
-npm test          # 250 tests: physiology, appraisal, enforcement, extension, harness
+npm test          # 308 tests: physiology, appraisal, enforcement, extension, harness
 npm run typecheck
 npm run demo:sequence            # deterministic replay, printed twice, asserted identical
 npm run demo:sequence -- exploratory
 ```
+
+`tests/reachability.test.ts` asks a different question from the rest of the suite: not
+whether a component is correct given an input, but which states the physiology can actually
+*reach*. Testing the policy mapping at the corners of the state space says nothing about
+whether those corners occur — and they do not — which is how an enforcement path that had
+never once executed stayed behind a green suite.
 
 `tests/live-session.test.ts` runs the extension inside a real Pi session against a
 scripted provider, so the wiring — handlers firing, injection reaching the model, blocks
@@ -168,11 +188,34 @@ actually stopping a tool — is verified against the genuine harness, not a mock
 ## Known limits
 
 - **Pi has no sandbox.** `bash` can rewrite files and bypass edit limits. Suspected
-  bypasses are detected and logged by default; `enforcement.guardBash` blocks them. This
-  is a heuristic, not isolation — real isolation needs a container.
+  bypasses are detected and logged by default; `enforcement.guardBash` blocks them, and the
+  shipped study turns it on. This is a heuristic, not isolation — real isolation needs a
+  container. It reads the command string only, with no shell tokenizer, so treat the counts
+  as indicative: a quoted `;` inside `node -e` still splits a command in two.
+- **Enforcement has never fired in a real run.** Roughly forty trials across two model
+  tiers, zero refusals. Not a calibration fault — `tests/reachability.test.ts` shows the
+  policy reaching its patch-size floor within four sustained identical failures — but every
+  fixture up to `bug-005` was solved too quickly to get there. `bug-005` reaches it in the
+  same test, against real `node --test` output; whether a live agent walks that path is
+  unmeasured. Until a study produces a refusal, results describe the effect of the *injected
+  text*, and say nothing about enforcement.
+- **This model sometimes answers without doing anything.** Twice in roughly thirty-five live
+  trials, in two different arms, the agent replied in one turn with no tool calls. Those
+  trials are flagged, excluded from every mean and reported as discarded, because scoring one
+  as a failure moves an arm's success rate by twenty points at five trials each. Each trial
+  writes `transcript.json`, which is the only way to tell a conversational reply from a
+  truncated response after the fact.
 - **OpenRouter routing varies between requests**, which adds variance unrelated to the
-  hypothesis. Pin it in the benchmark for any study whose conclusions depend on small
-  differences between arms.
+  hypothesis: a model id is served by several providers at differing quantizations, and
+  occasionally by one that cannot make tool calls at all. The shipped study pins provider
+  and quantization; do the same for any study whose conclusions depend on small differences
+  between arms. Check the endpoint's context window when changing a pin — it is a property
+  of the endpoint, not of the model.
+- **The default model is open-weight**, for reproducibility as much as cost: weights are a
+  fixed artifact, where a hosted model can be retired or re-tuned underneath a study. It is
+  also weaker than a frontier agent, and most of the injected policy is advisory rather than
+  enforced, so results do not automatically transfer up a tier. See G7 in
+  [PLAN.md](docs/PLAN.md).
 - **The physiology is deterministic; the model is not.** Run repeated trials. The report
   prints spread alongside every mean and refuses to imply significance it cannot support.
 - **Appraisal is deterministic and therefore shallow.** It reads exit codes, command

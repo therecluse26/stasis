@@ -10,7 +10,7 @@
  * result, which keeps appraisal reproducible across trials.
  */
 
-import type { CommandKind } from "./events.ts";
+import type { AgentEventType, CommandKind } from "./events.ts";
 
 /** Exactly the text Pi's bash tool appends on a non-zero exit. */
 const EXIT_CODE_PATTERN = /Command exited with code (\d+)/;
@@ -114,11 +114,12 @@ const KIND_RULES: KindRule[] = [
 ];
 
 const KIND_PRIORITY: Record<CommandKind, number> = {
-	test: 6,
-	typecheck: 5,
-	build: 4,
-	lint: 3,
-	vcs: 2,
+	test: 7,
+	typecheck: 6,
+	build: 5,
+	lint: 4,
+	vcs: 3,
+	mutate: 2,
 	inspect: 1,
 	other: 0,
 };
@@ -138,9 +139,22 @@ function classifySegment(segment: string): CommandKind {
 		.replace(/^\s*(\w+=\S*\s+)+/, "")
 		.replace(/^\s*(sudo|time|nice|env|npx|pnpx|bunx)\s+/i, "");
 	for (const rule of KIND_RULES) {
-		if (rule.pattern.test(stripped)) return rule.kind;
+		if (rule.pattern.test(stripped)) {
+			// A reading command that sends its output into a file is not reading. Only
+			// `inspect` is overridden: `node --test > run.log` still has to classify as a
+			// test run, because a verify command misread as anything else makes its failures
+			// generic tool errors that the physiology barely responds to.
+			return rule.kind === "inspect" && writesToFile(segment) ? "mutate" : rule.kind;
+		}
 	}
 	return "other";
+}
+
+/** Constructs that put output into a file, as opposed to merely changing one. */
+const WRITING_CONSTRUCTS = new Set(["redirect", "tee"]);
+
+function writesToFile(segment: string): boolean {
+	return detectMutationBypass(segment).constructs.some((name) => WRITING_CONSTRUCTS.has(name));
 }
 
 /**
@@ -158,8 +172,16 @@ export function classifyCommand(command: string): CommandKind {
 	return best;
 }
 
-/** Event type pair for a command kind, or undefined when the kind carries no verdict. */
-export function outcomeEventType(kind: CommandKind, failed: boolean) {
+/**
+ * Event type pair for a command kind.
+ *
+ * A failure always produces an event; a success may not. The overloads say so, so that the
+ * failure path does not have to prove a case it cannot reach.
+ */
+export function outcomeEventType(kind: CommandKind, failed: true): AgentEventType;
+export function outcomeEventType(kind: CommandKind, failed: false): AgentEventType | undefined;
+export function outcomeEventType(kind: CommandKind, failed: boolean): AgentEventType | undefined;
+export function outcomeEventType(kind: CommandKind, failed: boolean): AgentEventType | undefined {
 	switch (kind) {
 		case "test":
 			return failed ? ("TEST_FAILURE" as const) : ("TEST_SUCCESS" as const);
@@ -169,6 +191,12 @@ export function outcomeEventType(kind: CommandKind, failed: boolean) {
 			return failed ? ("TYPECHECK_FAILURE" as const) : ("TYPECHECK_SUCCESS" as const);
 		case "lint":
 			return failed ? ("LINT_FAILURE" as const) : ("LINT_SUCCESS" as const);
+		case "mutate":
+			// No event at all on success. The harness knows a file was written but not which
+			// one or by how much, so `PATCH_APPLIED` would have to invent a change size and
+			// would corrupt the patch-size metrics; `INSPECTION` would be an outright lie.
+			// The write is still recorded as a suspected bypass, which is where it belongs.
+			return failed ? ("TOOL_ERROR" as const) : undefined;
 		default:
 			// A failing `ls` is a tool error, not evidence about the code. A succeeding one
 			// is inspection, which must never raise stress.
@@ -182,8 +210,24 @@ export function outcomeEventType(kind: CommandKind, failed: boolean) {
  * Pi ships no sandbox, so this is detection rather than containment. Each entry names
  * the construct so telemetry records what was seen rather than just a boolean.
  */
-const MUTATION_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
-	{ name: "redirect", pattern: /(^|[^0-9<>&])>{1,2}\s*[^\s|&>]/ },
+/**
+ * Writes performed from inside an inline script body.
+ *
+ * `node -e` and `python -c` are how an agent runs a throwaway probe *and* how it would
+ * rewrite a file without touching the edit tool, so the interpreter flag alone says
+ * nothing. Requiring evidence of a write keeps the second case and drops the first: in a
+ * real study the read-only probe is by far the more common of the two, and counting it
+ * inflates the bypass rate to the point where the measure stops meaning anything.
+ */
+const INLINE_WRITE =
+	/\b(writeFile|writeFileSync|appendFile|appendFileSync|createWriteStream|renameSync|unlinkSync|rmSync|mkdirSync|copyFileSync|truncateSync)\b|\bopen\s*\([^)]*['"][wa]\+?['"]|\b(os\.(remove|rename|rmdir|unlink)|shutil\.(copy|copy2|move|rmtree))\b|\bFile\.(write|delete|rename)\b|\bIO\.write\b|\.write_(text|bytes)\s*\(/;
+
+const MUTATION_PATTERNS: Array<{ name: string; pattern: RegExp; requires?: RegExp }> = [
+	// The excluded characters before and after matter more than they look. `=>` is a
+	// JavaScript arrow function, `>=` a comparison and `->` a member access; all three
+	// appear constantly inside `node -e` and `awk` probes, and reading them as redirects
+	// was the single largest source of false bypass reports.
+	{ name: "redirect", pattern: /(^|[^0-9<>&=-])>{1,2}\s*[^\s|&>=]/ },
 	{ name: "tee", pattern: /\btee\b/ },
 	{ name: "sed-in-place", pattern: /\bsed\b[^|;]*\s-[a-zA-Z]*i\b/ },
 	{ name: "perl-in-place", pattern: /\bperl\b[^|;]*\s-[a-zA-Z]*i\b/ },
@@ -193,7 +237,7 @@ const MUTATION_PATTERNS: Array<{ name: string; pattern: RegExp }> = [
 	{ name: "move-copy", pattern: /^\s*(mv|cp|install|rsync)\b/m },
 	{ name: "truncate", pattern: /\b(truncate|dd|shred)\b/ },
 	{ name: "remove", pattern: /\brm\b/ },
-	{ name: "inline-script", pattern: /\b(python3?|node|ruby|perl)\s+-[ce]\b/ },
+	{ name: "inline-script", pattern: /\b(python3?|node|ruby|perl)\s+-[ce]\b/, requires: INLINE_WRITE },
 ];
 
 export interface BypassSuspicion {
@@ -206,13 +250,27 @@ export interface BypassSuspicion {
  *
  * Deliberately conservative about what it ignores: a redirect into `/dev/null` or a
  * pipeline feeding a pager is not an attempt to write source.
+ *
+ * Discarding output neutralizes the *redirect*, not the command that produced it. Skipping
+ * the whole segment — which is what this did originally — meant a trailing `> /dev/null`
+ * hid every other construct behind it, so `sed -i 's/a/b/' f.ts > /dev/null` was reported
+ * as nothing at all. Silencing a rewrite is if anything the more suspicious form.
  */
 export function detectMutationBypass(command: string): BypassSuspicion {
 	const constructs: string[] = [];
-	for (const segment of commandSegments(command)) {
-		if (/>\s*\/dev\/null/.test(segment)) continue;
-		for (const { name, pattern } of MUTATION_PATTERNS) {
-			if (pattern.test(segment) && !constructs.includes(name)) constructs.push(name);
+	const discardRedirect = /(&|\d)?>{1,2}\s*\/dev\/null/g;
+	// `requires` is checked against the whole command rather than the matching segment,
+	// because segmentation is quote-blind: `python3 -c "import os; os.remove('a')"` splits
+	// on the semicolon *inside the string*, leaving the interpreter flag in one fragment
+	// and the write in another. Widening the predicate is the cheap half of that fix; the
+	// expensive half is a shell tokenizer, which this module deliberately does not have.
+	const whole = command.replace(discardRedirect, " ");
+	for (const raw of commandSegments(command)) {
+		const segment = raw.replace(discardRedirect, " ");
+		for (const { name, pattern, requires } of MUTATION_PATTERNS) {
+			if (!pattern.test(segment)) continue;
+			if (requires && !requires.test(whole)) continue;
+			if (!constructs.includes(name)) constructs.push(name);
 		}
 	}
 	return { suspected: constructs.length > 0, constructs };

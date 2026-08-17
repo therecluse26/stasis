@@ -41,7 +41,13 @@ export function isAgentEventType(value: string): value is AgentEventType {
 }
 
 /** Deterministic classification of a shell command's purpose. */
-export type CommandKind = "test" | "build" | "typecheck" | "lint" | "vcs" | "inspect" | "other";
+/**
+ * `mutate` is a shell command that writes files. It exists to keep such a command from
+ * being read as `inspect`: `cat > src/thing.js << 'EOF'` starts with `cat` and is a
+ * whole-file rewrite, and appraising that as inspection both lowers stress and credits the
+ * agent with having looked at something.
+ */
+export type CommandKind = "test" | "build" | "typecheck" | "lint" | "vcs" | "mutate" | "inspect" | "other";
 
 /**
  * Provenance for an appraised event. Everything here is recorded in telemetry so the

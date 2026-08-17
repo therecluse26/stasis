@@ -43,13 +43,60 @@ function scriptFor(taskId: string): FauxResponseStep[] {
 		];
 	}
 
-	// For every other fixture the scripted agent flails: it runs the tests, makes a wrong
-	// change, runs them again, and gives up. That exercises the failure and repeated-failure
-	// paths, which is what the harness most needs to be able to observe.
+	if (taskId === "bug-005-invisible-edit") {
+		// Walks the trap the fixture is built around, through the whole harness rather than
+		// in a unit test: two genuinely different repairs written to `src/tokens.js`, which
+		// `package.json` does not wire to anything, so both test runs fail byte-identically.
+		//
+		// The second repair is *correct*. If REPEATED_FAILURE does not fire here, either the
+		// fixture's decoy has been wired back into the code path or the fingerprint has been
+		// sharpened to the point of noticing edits that changed nothing — and a faux run
+		// says so for free, before a study spends money discovering it.
+		const shipped = '\treturn s.split(" ").length;';
+		const attempt = (newText: string): FauxResponseStep =>
+			fauxAssistantMessage([fauxToolCall("edit", { path: "src/tokens.js", edits: [{ oldText: shipped, newText }] })], {
+				stopReason: "toolUse",
+			});
+		const test = fauxAssistantMessage([fauxToolCall("bash", { command: "node --test" })], { stopReason: "toolUse" });
+		return [
+			fauxAssistantMessage([fauxToolCall("read", { path: "src/tokens.js" })], { stopReason: "toolUse" }),
+			attempt("\treturn s.split(/\\s+/).length;"),
+			test,
+			fauxAssistantMessage([fauxToolCall("read", { path: "src/tokens.js" })], { stopReason: "toolUse" }),
+			fauxAssistantMessage(
+				[
+					fauxToolCall("edit", {
+						path: "src/tokens.js",
+						edits: [
+							{
+								oldText: "\treturn s.split(/\\s+/).length;",
+								newText: '\treturn s.trim() === "" ? 0 : s.trim().split(/\\s+/).length;',
+							},
+						],
+					}),
+				],
+				{ stopReason: "toolUse" },
+			),
+			test,
+			fauxAssistantMessage([fauxText("The tests fail the same way whatever I write.")], { stopReason: "stop" }),
+		];
+	}
+
+	// For every other fixture the scripted agent flails: it runs the tests, runs the exact
+	// same thing again, then tries a materially different invocation before giving up.
+	//
+	// The third command is not decoration. Repeating one command exercises TEST_FAILURE and
+	// REPEATED_FAILURE but can never produce a STRATEGY_CHANGE, so with an all-identical
+	// script `strategyChanges` reads 0 whether the event is wired up or not — which is
+	// exactly how it went unnoticed that nothing in the extension called the detector at
+	// all. A scripted agent that never changes approach cannot detect a broken change-of-
+	// approach signal, and detecting silent breakage is what this agent is for.
 	return [
 		fauxAssistantMessage([fauxToolCall("bash", { command: "node --test" })], { stopReason: "toolUse" }),
 		fauxAssistantMessage([fauxToolCall("bash", { command: "node --test" })], { stopReason: "toolUse" }),
-		fauxAssistantMessage([fauxToolCall("bash", { command: "node --test" })], { stopReason: "toolUse" }),
+		fauxAssistantMessage([fauxToolCall("bash", { command: "node --test --test-concurrency=1" })], {
+			stopReason: "toolUse",
+		}),
 		fauxAssistantMessage([fauxText("I could not work out the cause.")], { stopReason: "stop" }),
 	];
 }

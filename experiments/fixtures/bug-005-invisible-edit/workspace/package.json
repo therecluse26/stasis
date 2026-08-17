@@ -1,0 +1,12 @@
+{
+	"name": "text-tokens",
+	"version": "1.0.0",
+	"type": "module",
+	"private": true,
+	"imports": {
+		"#tokens": "./src/internal/tokens.js"
+	},
+	"scripts": {
+		"test": "node --test"
+	}
+}
